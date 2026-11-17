@@ -71,6 +71,12 @@ def features(ipo: Ipo, ctx: Ctx | None, names: list[str] | None = None) -> list[
     return [FEATURES[n](ipo, ctx) for n in (names or FEATURE_NAMES)]
 
 
+def open_return(h: Ipo) -> float | None:
+    if not h.open_price or not h.final_price:
+        return None
+    return h.open_price / h.final_price - 1
+
+
 def _usable(history: list[Ipo]) -> list[Ipo]:
     return [h for h in history if not h.is_spac and first_day_return(h) is not None]
 
@@ -168,25 +174,30 @@ class Model:
     scaler: _Scaler
     coef: np.ndarray
     intercept: float
+    log: bool = False
 
     def predict(self, ipo: Ipo, ctx: Ctx | None) -> float:
-        return float(self.scaler.transform(ipo, ctx) @ self.coef + self.intercept)
+        v = float(self.scaler.transform(ipo, ctx) @ self.coef + self.intercept)
+        return float(np.expm1(v)) if self.log else v
 
 
-def _design(history: list[Ipo], ctxs: dict | None, names: list[str]):
-    pool = _usable(history)
+def _design(pool: list[Ipo], ctxs: dict | None, names: list[str]):
     X = np.array([_row(h, ctxs, names) for h in pool]).reshape(len(pool), len(names))
     scaler, Z = _Scaler.fit(X, names)
     return pool, scaler, Z
 
 
-def fit_ridge(history: list[Ipo], ctxs: dict | None = None, names: list[str] | None = None) -> Model:
+def fit_ridge(history: list[Ipo], ctxs: dict | None = None, names: list[str] | None = None,
+              yfun=first_day_return, log: bool = False) -> Model:
+    """Ridge regression of a return. log=True fits log(1+r), which is less dragged by +200% outliers."""
     names = names or coverage_names(_usable(history), ctxs)
-    pool, scaler, Z = _design(history, ctxs, names)
-    y = np.array([first_day_return(h) for h in pool])
+    pool, scaler, Z = _design([h for h in _usable(history) if yfun(h) is not None], ctxs, names)
+    y = np.array([yfun(h) for h in pool])
+    if log:
+        y = np.log1p(y)
     yb = float(y.mean())
     coef = np.linalg.solve(Z.T @ Z + config.RIDGE_ALPHA * np.eye(Z.shape[1]), Z.T @ (y - yb))
-    return Model(scaler, coef, yb)
+    return Model(scaler, coef, yb, log)
 
 
 def _clip_p(p: float) -> float:
@@ -206,7 +217,7 @@ class LogitModel:
 def fit_logistic(history: list[Ipo], ctxs: dict | None = None, names: list[str] | None = None) -> LogitModel:
     """P(first-day close < offer price), ridge-penalised logistic regression fitted by IRLS."""
     names = names or coverage_names(_usable(history), ctxs)
-    pool, scaler, Z = _design(history, ctxs, names)
+    pool, scaler, Z = _design(_usable(history), ctxs, names)
     y = np.array([1.0 if first_day_return(h) < 0 else 0.0 for h in pool])
     X = np.hstack([np.ones((len(pool), 1)), Z])
     reg = config.LOGIT_ALPHA * np.eye(X.shape[1])
@@ -234,6 +245,18 @@ def _sorted_items(history: list[Ipo]) -> list[Ipo]:
 def _past_of(items: list[Ipo], upto: int, target: Ipo) -> list[Ipo]:
     cutoff = target.sub_start or target.listing_date
     return [p for p in items[:upto] if p.listing_date < cutoff]
+
+
+def _ensemble(target: Ipo, past: list[Ipo], ctxs: dict, names: list[str], yfun) -> dict | None:
+    """Average of the k-nearest-neighbour median and the log-return ridge for one target return."""
+    rows = [p for p in past if yfun(p) is not None]
+    if len(rows) < config.MIN_TRAIN:
+        return None
+    base = float(np.median([yfun(p) for p in rows]))
+    nb = neighbors(target, rows, config.K_NEIGHBORS, ctxs, names)
+    knn = float(np.median([yfun(x) for x in nb])) if nb else base
+    reg = clip_return(fit_ridge(rows, ctxs, names, yfun, log=True).predict(target, ctxs.get(target.no)))
+    return {"knn": knn, "reg": reg, "ens": clip_return((knn + reg) / 2), "base": base}
 
 
 def _logloss(p: float, down: bool) -> float:
@@ -296,17 +319,19 @@ def walk_forward(history: list[Ipo], names: list[str] | None = None) -> list[dic
         if len(past) < config.MIN_TRAIN:
             continue
         ctx = ctxs.get(target.no)
-        rets = [first_day_return(p) for p in past]
-        nb = neighbors(target, past, config.K_NEIGHBORS, ctxs, names)
-        records.append({
+        close = _ensemble(target, past, ctxs, names, first_day_return)
+        rec = {
             "no": target.no,
             "actual": first_day_return(target),
-            "baseline": float(np.median(rets)),
-            "knn": float(np.median([first_day_return(x) for x in nb])) if nb else float(np.median(rets)),
-            "model": clip_return(fit_ridge(past, ctxs, names).predict(target, ctx)),
+            "baseline": close["base"], "knn": close["knn"], "model": close["reg"], "ens": close["ens"],
             "p_down": fit_logistic(past, ctxs, names).predict(target, ctx),
             "p_base": _base_rate(past),
-        })
+            "open_actual": open_return(target),
+        }
+        opened = _ensemble(target, past, ctxs, names, open_return) if rec["open_actual"] is not None else None
+        for key, val in (("open_baseline", "base"), ("open_knn", "knn"), ("open_model", "reg"), ("open_ens", "ens")):
+            rec[key] = opened[val] if opened else None
+        records.append(rec)
     return records
 
 
@@ -315,10 +340,15 @@ def evaluate(history: list[Ipo], names: list[str] | None = None) -> dict | None:
     if not recs:
         return None
     out = {}
-    for method in ("knn", "model", "baseline"):
-        err = [abs(r[method] - r["actual"]) for r in recs]
-        hit = [(r[method] < 0) == (r["actual"] < 0) for r in recs]
-        out[method] = {"mae": float(np.mean(err)), "direction_acc": float(np.mean(hit)), "n": len(recs)}
+    for method, actual in (("knn", "actual"), ("model", "actual"), ("baseline", "actual"), ("ens", "actual"),
+                           ("open_knn", "open_actual"), ("open_model", "open_actual"),
+                           ("open_baseline", "open_actual"), ("open_ens", "open_actual")):
+        rows = [r for r in recs if r[method] is not None and r[actual] is not None]
+        if not rows:
+            continue
+        err = [abs(r[method] - r[actual]) for r in rows]
+        hit = [(r[method] < 0) == (r[actual] < 0) for r in rows]
+        out[method] = {"mae": float(np.mean(err)), "direction_acc": float(np.mean(hit)), "n": len(rows)}
     for key, field in (("prob", "p_down"), ("prob_base", "p_base")):
         ps = [r[field] for r in recs]
         downs = [r["actual"] < 0 for r in recs]
@@ -331,8 +361,8 @@ def evaluate(history: list[Ipo], names: list[str] | None = None) -> dict | None:
     return out
 
 
-def _beats_baseline(ev: dict | None, method: str) -> bool:
-    return bool(ev and method in ev and "baseline" in ev and ev[method]["mae"] < ev["baseline"]["mae"])
+def _beats_baseline(ev: dict | None, method: str, base: str = "baseline") -> bool:
+    return bool(ev and method in ev and base in ev and ev[method]["mae"] < ev[base]["mae"])
 
 
 def _prob_beats_base(ev: dict | None) -> bool:
@@ -355,18 +385,26 @@ def predict_for(ipo: Ipo, history: list[Ipo], eval_result: dict | None,
         knn = knn_summary(nb, ipo.final_price) if nb else None
 
     enough = len(pool) >= config.MIN_TRAIN
-    model = None
-    if enough and _beats_baseline(eval_result, "model"):
-        r = clip_return(fit_ridge(pool, ctxs, names).predict(ipo, ctx))
-        model = {"return": r, "price": int(round(ipo.final_price * (1 + r))), "mae": eval_result["model"]["mae"]}
+
+    def priced(key: str, base: str, yfun) -> dict | None:
+        if not (enough and _beats_baseline(eval_result, key, base)):
+            return None
+        e = _ensemble(ipo, pool, ctxs, names, yfun)
+        if e is None:
+            return None
+        return {"return": e["ens"], "price": int(round(ipo.final_price * (1 + e["ens"]))),
+                "mae": eval_result[key]["mae"], "direction_acc": eval_result[key]["direction_acc"]}
+
+    close = priced("ens", "baseline", first_day_return)
+    opened = priced("open_ens", "open_baseline", open_return)
 
     prob = None
     if enough and _prob_beats_base(eval_result):
         prob = {"p_down": fit_logistic(pool, ctxs, names).predict(ipo, ctx), "n": len(pool)}
-    upbeat = ((knn is not None and knn["median"] > 0) or (model is not None and model["return"] > 0)
+    upbeat = ((knn is not None and knn["median"] > 0) or (close is not None and close["return"] > 0)
               or (prob is not None and prob["p_down"] < 0.5))
     conflict = ipo.flag_count >= config.CONFLICT_FLAGS and upbeat
-    return {"knn": knn, "model": model, "prob": prob, "conflict": conflict,
+    return {"knn": knn, "open": opened, "close": close, "prob": prob, "conflict": conflict,
             "accuracy": eval_result, "features": names}
 
 
@@ -374,19 +412,25 @@ def report(history: list[Ipo], names: list[str] | None = None) -> str:
     ev = evaluate(history, names)
     if ev is None:
         return "검증할 과거 종목이 부족합니다.\n"
-    n = ev["baseline"]["n"]
-    lines = [f"## 첫날 가격 예측 검증 (시간 순서 검증, 종목 {n}개)", "",
-             f"사용 변수: {', '.join(names) if names else '값이 절반 이상 있는 모든 변수'}", "",
-             "| 방식 | 평균 오차(%p) | 공모가 위/아래 적중률 | 화면 표시 |", "|---|---|---|---|"]
-    labels = {"knn": "비슷한 종목 비교(가운데 값)", "model": "예측 모델", "baseline": "기준(과거 가운데 값)"}
-    for m in ("knn", "model", "baseline"):
-        show = "-" if m == "baseline" else ("표시" if _beats_baseline(ev, m) else "숨김")
-        lines.append(f"| {labels[m]} | {ev[m]['mae'] * 100:.1f} | {ev[m]['direction_acc'] * 100:.0f}% | {show} |")
+    lines = [f"## 가격 예측 검증 (시간 순서 검증, 종목 {ev['baseline']['n']}개)", "",
+             f"사용 변수: {', '.join(names) if names else '값이 절반 이상 있는 모든 변수'}", ""]
+    labels = {"knn": "비슷한 종목 비교", "model": "로그 수익률 회귀", "ens": "두 방식 평균 (화면에 표시)",
+              "baseline": "기준(과거 가운데 값)"}
+    for title, prefix, base in (("첫날 종가", "", "baseline"), ("시초가", "open_", "open_baseline")):
+        if base not in ev:
+            continue
+        lines += [f"### {title}", "", "| 방식 | 평균 오차(%p) | 공모가 위/아래 적중률 |", "|---|---|---|"]
+        for m in ("knn", "model", "ens", "baseline"):
+            key = prefix + m
+            if key in ev:
+                lines.append(f"| {labels[m]} | {ev[key]['mae'] * 100:.1f} | {ev[key]['direction_acc'] * 100:.0f}% |")
+        shown = _beats_baseline(ev, prefix + "ens", base)
+        lines += ["", f"화면 표시: {'예 (기준보다 오차가 작음)' if shown else '아니오 (기준보다 낫지 않음)'}", ""]
     pr, pb = ev["prob"], ev["prob_base"]
-    lines += ["", "| 하락 확률 | log loss | Brier | 적중률 | 화면 표시 |", "|---|---|---|---|---|",
-              f"| 모델 | {pr['logloss']:.3f} | {pr['brier']:.3f} | {pr['accuracy'] * 100:.0f}% | "
-              f"{'표시' if _prob_beats_base(ev) else '숨김'} |",
-              f"| 기준(과거 하락 비율) | {pb['logloss']:.3f} | {pb['brier']:.3f} | {pb['accuracy'] * 100:.0f}% | - |"]
+    lines += ["### 공모가 아래로 끝날 확률", "", "| 방식 | log loss | Brier | 적중률 |", "|---|---|---|---|",
+              f"| 모델 | {pr['logloss']:.3f} | {pr['brier']:.3f} | {pr['accuracy'] * 100:.0f}% |",
+              f"| 기준(과거 하락 비율) | {pb['logloss']:.3f} | {pb['brier']:.3f} | {pb['accuracy'] * 100:.0f}% |",
+              "", f"화면 표시: {'예' if _prob_beats_base(ev) else '아니오'}"]
     return "\n".join(lines) + "\n"
 
 

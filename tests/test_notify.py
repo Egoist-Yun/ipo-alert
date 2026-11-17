@@ -19,7 +19,8 @@ NEXI = Ipo(no=2336, name="넥스아이", url="https://38/2336", sub_start="2026-
                {"key": "mood", "label": "최근 시장 분위기", "value": None, "flag": None},
                {"key": "float", "label": "유통가능물량", "value": 10.0, "flag": False},
            ],
-           prediction={"knn": {"n": 10, "down_count": 7}, "model": {"return": -0.09, "mae": 0.18},
+           prediction={"knn": {"n": 10, "down_count": 7},
+                       "open": {"return": 0.12, "mae": 0.41}, "close": {"return": -0.09, "mae": 0.59},
                        "accuracy": None})
 
 
@@ -63,13 +64,13 @@ def test_format_contains_disclaimer_click_and_lines():
     assert "공모가 위치" in p["message"] and "의무보유확약" in p["message"]
     assert "유통가능물량" not in p["message"]
     assert "비슷한 10개 중 7개 하락" in p["message"]
-    assert "모델 예측 -9% (±18%p)" in p["message"]
+    assert "시초가 예상 +12% (±41%p) · 종가 예상 -9% (±59%p)" in p["message"]
     assert "확인 불가 1개" in p["message"]
 
 
 def test_format_without_prediction_or_unknown():
     p = format_alert(replace(NEXI, prediction=None, unknown_count=0), "https://s/")
-    assert "비슷한" not in p["message"] and "모델" not in p["message"] and "확인 불가" not in p["message"]
+    assert "비슷한" not in p["message"] and "예상" not in p["message"] and "확인 불가" not in p["message"]
 
 
 def test_send_posts_json():

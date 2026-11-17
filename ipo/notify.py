@@ -56,13 +56,13 @@ def format_alert(ipo: Ipo, site_url: str) -> dict:
     if pred.get("prob"):
         lines.append(f"공모가 아래로 끝날 확률 {pred['prob']['p_down'] * 100:.0f}%")
     parts = []
-    if pred.get("knn"):
-        parts.append(f"비슷한 {pred['knn']['n']}개 중 {pred['knn']['down_count']}개 하락")
-    if pred.get("model"):
-        m = pred["model"]
-        parts.append(f"모델 예측 {m['return'] * 100:+.0f}% (±{m['mae'] * 100:.0f}%p)")
+    for key, label in (("open", "시초가 예상"), ("close", "종가 예상")):
+        if pred.get(key):
+            parts.append(f"{label} {pred[key]['return'] * 100:+.0f}% (±{pred[key]['mae'] * 100:.0f}%p)")
     if parts:
         lines.append(" · ".join(parts))
+    if pred.get("knn"):
+        lines.append(f"비슷한 {pred['knn']['n']}개 중 {pred['knn']['down_count']}개 하락")
     if pred.get("conflict"):
         lines.append("신호와 예측이 엇갈려요. 두 가지를 함께 보세요.")
     if ipo.unknown_count:

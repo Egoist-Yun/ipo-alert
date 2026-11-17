@@ -137,7 +137,7 @@ function resultNodes(ipo) {
 
 function predictionNodes(ipo) {
   const p = ipo.prediction;
-  if (!p || (!p.knn && !p.model && !p.prob)) {
+  if (!p || (!p.knn && !p.open && !p.close && !p.prob)) {
     const why = p && p.accuracy
       ? '과거 기록으로 검증했을 때 기준보다 정확하지 않아서 보여주지 않아요.'
       : '비교할 과거 기록이 아직 부족해요.';
@@ -147,6 +147,15 @@ function predictionNodes(ipo) {
   const acc = p.accuracy || {};
   if (p.conflict) {
     nodes.push(h('p', { class: 'summary' }, '신호와 예측이 엇갈려요. 두 가지를 함께 보세요.'));
+  }
+  if (p.open || p.close) {
+    nodes.push(h('h4', {}, '가격 예측'));
+    for (const [key, label] of [['open', '시초가 예상'], ['close', '첫날 종가 예상']]) {
+      const e = p[key];
+      if (!e) continue;
+      nodes.push(kv(label, `${won(e.price)} (${pct(e.return)})`, e.return < 0 ? 'flag' : ''));
+      nodes.push(h('p', { class: 'note' }, `과거 검증: 평균 오차 ±${(e.mae * 100).toFixed(0)}%p, 공모가 위/아래 적중 ${(e.direction_acc * 100).toFixed(0)}%`));
+    }
   }
   if (p.prob) {
     nodes.push(h('h4', {}, '공모가 아래로 끝날 확률'));
@@ -163,12 +172,6 @@ function predictionNodes(ipo) {
     nodes.push(kv('가운데 값', pct(k.median)));
     for (const it of k.items) nodes.push(kv(it.name, pct(it.return)));
     if (acc.knn) nodes.push(h('p', { class: 'note' }, `과거 검증: 공모가 위/아래 적중 ${(acc.knn.direction_acc * 100).toFixed(0)}%, 평균 오차 ±${(acc.knn.mae * 100).toFixed(0)}%p`));
-  }
-  if (p.model) {
-    nodes.push(h('h4', {}, '모델 예측'));
-    nodes.push(kv('첫날 종가', `${won(p.model.price)} (${pct(p.model.return)})`));
-    nodes.push(h('p', { class: 'note' }, `평균 오차 ±${(p.model.mae * 100).toFixed(0)}%p` +
-      (acc.model ? ` · 공모가 위/아래 적중 ${(acc.model.direction_acc * 100).toFixed(0)}%` : '')));
   }
   return nodes;
 }

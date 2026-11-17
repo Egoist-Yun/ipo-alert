@@ -21,7 +21,8 @@ def mk(no, comp=100.0, lock=1.0, ret=0.0, d=None, market="코스닥", bio=False,
                 float_pct=20.0, offer_amount_mil=10000, revenue_mil=5000, net_income_mil=100,
                 capital_mil=2000, par_value=100, old_share_pct=0.0, inst_count=300,
                 listing_date=None if d is None else day(d),
-                first_close=None if ret is None else round(100 * (1 + ret)))
+                first_close=None if ret is None else round(100 * (1 + ret)),
+                open_price=None if ret is None else round(100 * (1 + ret / 2)))
     base.update(kw)
     return Ipo(**base)
 
@@ -165,6 +166,8 @@ def test_evaluate_none_when_too_little_history():
 
 def good_ev(**over):
     ev = {"knn": {"mae": 0.1}, "model": {"mae": 0.1}, "baseline": {"mae": 0.2},
+          "ens": {"mae": 0.1, "direction_acc": 0.8}, "open_ens": {"mae": 0.1, "direction_acc": 0.9},
+          "open_baseline": {"mae": 0.2},
           "prob": {"logloss": 0.4}, "prob_base": {"logloss": 0.6}}
     ev.update(over)
     return ev
@@ -172,10 +175,10 @@ def good_ev(**over):
 
 def test_method_hidden_when_not_better_than_baseline():
     target = mk(500, comp=120, ret=None)
-    ev = good_ev(knn={"mae": 0.30}, prob={"logloss": 0.7})
+    ev = good_ev(knn={"mae": 0.30}, prob={"logloss": 0.7}, open_ens={"mae": 0.25, "direction_acc": 0.5})
     p = predict_for(target, hist60(), ev, names=["comp", "lockup"])
-    assert p["knn"] is None and p["prob"] is None and p["model"] is not None
-    assert -0.40 <= p["model"]["return"] <= 3.00 and p["model"]["mae"] == 0.1
+    assert p["knn"] is None and p["prob"] is None and p["open"] is None and p["close"] is not None
+    assert -0.40 <= p["close"]["return"] <= 3.00 and p["close"]["mae"] == 0.1
 
 
 def test_probability_shown_when_it_beats_base_rate():
@@ -198,3 +201,32 @@ def test_conflict_when_many_flags_but_prediction_points_up():
     assert few["conflict"] is False
     consistent = predict_for(mk(502, comp=30, ret=None, flag_count=5), hist, good_ev(), names=["comp"])
     assert consistent["conflict"] is False
+
+
+def test_ridge_on_log_returns_recovers_multiplicative_relation():
+    hist = [mk(i, comp=10 + 25 * i, ret=math.expm1(-0.3 + 0.12 * math.log(10 + 25 * i))) for i in range(40)]
+    model = fit_ridge(hist, names=["comp"], log=True)
+    truth = math.expm1(-0.3 + 0.12 * math.log(300))
+    assert abs(model.predict(mk(99, comp=300, ret=None), None) - truth) < 0.05
+
+
+def test_open_and_close_predictions_are_ensembles_with_prices():
+    p = predict_for(mk(500, comp=30, ret=None), synthetic(), good_ev(), names=["comp"])
+    for key in ("open", "close"):
+        r = p[key]["return"]
+        assert -0.40 <= r <= 3.00 and p[key]["price"] == round(100 * (1 + r))
+    assert p["close"]["return"] < 0 and p["open"]["return"] < 0
+    assert p["open"]["mae"] == 0.1 and p["open"]["direction_acc"] == 0.9
+
+
+def test_evaluate_reports_ensemble_and_open_metrics():
+    ev = evaluate(synthetic(), names=["comp"])
+    for key in ("ens", "open_ens", "open_baseline", "open_knn", "open_model"):
+        assert ev[key]["n"] > 0 and ev[key]["mae"] >= 0
+    assert ev["open_ens"]["mae"] < ev["open_baseline"]["mae"]
+
+
+def test_open_metrics_skip_stocks_without_open_price():
+    hist = [replace(h, open_price=None) if i % 2 else h for i, h in enumerate(synthetic())]
+    ev = evaluate(hist, names=["comp"])
+    assert ev["open_ens"]["n"] < ev["ens"]["n"]

@@ -75,3 +75,14 @@ def test_already_listed_stock_gets_no_prediction(tmp_path):
     assert nexi["first_close"] == 4810 and nexi["prediction"] is None
     ucast = next(i for i in data["ipos"] if i["name"] == "유캐스트")
     assert ucast["prediction"] is not None
+
+
+def test_listing_result_is_filled_from_history_when_tables_lack_it(tmp_path):
+    from ipo.history import save_history
+    from ipo.models import Ipo
+    save_history(tmp_path / "history.json", [Ipo(no=2352, name="유캐스트", url="", listing_date="2026-11-30",
+                                                 final_price=19000, open_price=25000, first_close=21000)])
+    run(tmp_path, None, "", NOW, fetch=fake_fetch, post=Rec())
+    data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
+    ucast = next(i for i in data["ipos"] if i["no"] == 2352)
+    assert (ucast["open_price"], ucast["first_close"]) == (25000, 21000) and ucast["prediction"] is None

@@ -56,8 +56,13 @@ def _build(data_dir: Path, now_kst: datetime, fetch) -> list:
     names = _model_names(data_dir, history)
     ev = evaluate(history, names)
     cutoff = (now_kst.date() - timedelta(days=CALENDAR_DAYS_BACK)).isoformat()
+    known = {h.no: h for h in history}
     out = []
     for ipo in current:
+        past = known.get(ipo.no)
+        if past is not None and ipo.first_close is None and past.first_close is not None:
+            ipo = replace(ipo, first_close=past.first_close, open_price=past.open_price,
+                          listing_date=ipo.listing_date or past.listing_date)
         if not ipo.sub_start or ipo.sub_start < cutoff:
             continue
         scored = score(ipo, mood)
