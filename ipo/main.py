@@ -15,7 +15,7 @@ from ipo.history import load_history, save_history, update_history
 from ipo.notify import (due_alerts, failure_alert, format_alert, format_pre_alert, load_state, mark_sent,
                         save_state,
                         send)
-from ipo.patterns import match_patterns, pattern_stats
+from ipo.patterns import match_patterns, pattern_stats, warning_level
 from ipo.predict import _usable, calibrate, coverage_names, evaluate, predict_for, select_features
 from ipo.signals import score
 
@@ -75,7 +75,8 @@ def _build(data_dir: Path, now_kst: datetime, fetch) -> list:
         listed = scored.first_close is not None  # result is known; a prediction would be trained on itself
         pred = None if listed else predict_for(scored, recent, ev, names, calibration=cal,
                                                 full_history=history, post_eval=post_ev)
-        out.append(replace(scored, prediction=pred, patterns=match_patterns(scored, stats)))
+        matched = match_patterns(scored, stats)
+        out.append(replace(scored, prediction=pred, patterns=matched, warning=warning_level(pred, matched)))
     return sorted(out, key=lambda i: (i.sub_start, i.no))
 
 

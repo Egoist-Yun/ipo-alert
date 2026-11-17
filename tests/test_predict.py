@@ -298,3 +298,12 @@ def test_prediction_with_fresh_calibration_is_json_serialisable():
                     calibration=cal, full_history=hist)
     json.dumps(p)
     json.dumps(cal)
+
+
+
+def test_calibrate_reports_strong_warning_stats():
+    from ipo.predict import calibrate
+    cal = calibrate(retail_hist(), retail_hist(), ["comp"])
+    for key in ("close", "open"):
+        st = cal[key]["strong_test"]
+        assert 0 <= st["recall"] <= 1 and 0 <= st["precision"] <= 1 and st["warned"] <= cal[key]["test"]["warned"]

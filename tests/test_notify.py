@@ -176,3 +176,23 @@ def test_pre_listing_alert_uses_open_rate_of_post_pattern():
     from ipo.notify import format_pre_alert
     p = format_pre_alert(replace(LISTING_SOON, patterns=[RISK, POST_RISK]), "https://s/")
     assert "과거 하락 패턴: 일반청약 경쟁률 100대 1 미만 + 의무보유확약 1% 미만 (과거 24개 중 58%가 시초가 공모가 아래)" in p["message"]
+
+
+
+def test_titles_name_the_warning_level():
+    pred = {"knn": None, "open": None, "close": None, "conflict": False, "accuracy": None,
+            "prob": {"p_down": 0.4, "n": 260, "threshold": 0.35, "warn": True, "precision": 0.67, "recall": 0.56}}
+    strong = format_alert(replace(NEXI, prediction=pred, warning="strong"), "https://s/")
+    assert strong["title"] == "넥스아이 ⚠5개 · 강한 하락 경고 · 청약 11/3~11/4"
+    assert "강한 하락 경고: 모델과 과거 하락 패턴이 모두 하락을 가리켜요" in strong["message"]
+    from ipo.notify import format_pre_alert
+    pre = format_pre_alert(replace(LISTING_SOON, warning="strong"), "https://s/")
+    assert pre["title"] == "넥스아이 상장 전 · 시초가 강한 하락 경고"
+
+
+def test_conflict_line_explains_itself_when_a_warning_exists():
+    pred = {"knn": None, "open": None, "close": {"return": 0.3, "mae": 0.6}, "conflict": True, "accuracy": None,
+            "prob": {"p_down": 0.4, "n": 260, "threshold": 0.35, "warn": True, "precision": 0.67, "recall": 0.56}}
+    msg = format_alert(replace(NEXI, prediction=pred, warning="warn"), "https://s/")["message"]
+    assert "가격 예측은 상승이지만, 하락을 미리 잡는 데는 과거에 경고가 가격 예측보다 정확했어요." in msg
+    assert "두 가지를 함께 보세요" not in msg

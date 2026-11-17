@@ -170,8 +170,18 @@ function predictionNodes(ipo) {
   }
   const nodes = [];
   const acc = p.accuracy || {};
+  if (ipo.warning) {
+    const w = p.open_down || p.prob || {};
+    const strong = ipo.warning === 'strong';
+    nodes.push(h('p', { class: 'summary warn' }, strong ? '강한 하락 경고' : '하락 경고'));
+    const sp = strong ? w.strong_precision : w.precision;
+    const sr = strong ? w.strong_recall : w.recall;
+    const why = strong ? '모델과 과거 하락 패턴이 모두 하락을 가리켜요.' : '모델이 하락을 가리켜요. 과거 하락 패턴과는 겹치지 않아요.';
+    const stat = sp != null ? ` 과거 검증에서 이런 경고의 ${(sp * 100).toFixed(0)}%가 맞았고, 하락의 ${(sr * 100).toFixed(0)}%를 미리 잡았어요.` : '';
+    nodes.push(h('p', { class: 'note' }, why + stat));
+  }
   if (p.conflict) {
-    nodes.push(h('p', { class: 'summary' }, '신호와 예측이 엇갈려요. 두 가지를 함께 보세요.'));
+    nodes.push(h('p', { class: 'summary' }, ipo.warning ? '가격 예측은 상승이지만, 하락을 미리 잡는 데는 과거에 경고가 가격 예측보다 정확했어요.' : '신호와 예측이 엇갈려요. 두 가지를 함께 보세요.'));
   }
   if (p.open || p.close) {
     nodes.push(h('h4', {}, '가격 예측'));

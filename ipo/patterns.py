@@ -87,3 +87,19 @@ def match_patterns(ipo: Ipo, stats: dict[str, dict], min_n: int = MIN_CASES) -> 
             continue
         out.append({"key": p.key, "label": p.label, "phase": p.phase, "kind": p.kind, **s})
     return out
+
+
+def warning_level(prediction: dict | None, patterns: list[dict]) -> str | None:
+    """"strong" when the model warns and a matching past decline pattern agrees, "warn" when only the model warns.
+    After the subscription closes the open-price judgment (and the post-subscription pattern) replaces the earlier one."""
+    p = prediction or {}
+    od = p.get("open_down")
+    if od:
+        warn = od.get("warn")
+        agrees = any(x["key"] == "retail_lock" for x in patterns)
+    else:
+        warn = (p.get("prob") or {}).get("warn")
+        agrees = any(x["kind"] == "risk" and x["phase"] == "pre" for x in patterns)
+    if not warn:
+        return None
+    return "strong" if agrees else "warn"

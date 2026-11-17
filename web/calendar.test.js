@@ -74,3 +74,8 @@ test('badgeInfo: after subscription the open-price judgment replaces the pre-sub
   const calmAfter = { ...base, flag_count: 1, prediction: { prob: { warn: true }, open_down: { warn: false } } };
   assert.deepEqual(badgeInfo(calmAfter), { text: '⚠ 1', tone: 'risk' });
 });
+
+test('badgeInfo: warning level from the data wins', () => {
+  assert.deepEqual(badgeInfo({ ...base, warning: 'strong' }), { text: '강한 하락 경고', tone: 'risk' });
+  assert.deepEqual(badgeInfo({ ...base, warning: 'warn', prediction: { prob: { warn: true } } }), { text: '하락 경고', tone: 'risk' });
+});

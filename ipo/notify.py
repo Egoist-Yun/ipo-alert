@@ -68,6 +68,10 @@ def _pattern_line(patterns: list[dict], use_open: bool) -> str | None:
     return None
 
 
+def _level_text(level: str | None) -> str:
+    return {"strong": " · 강한 하락 경고", "warn": " · 하락 경고"}.get(level, "")
+
+
 def format_alert(ipo: Ipo, site_url: str) -> dict:
     span = f"{_md(ipo.sub_start)}~{_md(ipo.sub_end)}" if ipo.sub_start and ipo.sub_end else "일정 미정"
     lines = [f"⚠ {s['label']}: {_value_text(s)}" for s in ipo.signals if s["flag"] is True]
@@ -77,6 +81,9 @@ def format_alert(ipo: Ipo, site_url: str) -> dict:
     pred = ipo.prediction or {}
     prob = pred.get("prob")
     warn = bool(prob and prob.get("warn"))
+    level = ipo.warning or ("warn" if warn else None)
+    if level == "strong":
+        lines.append("강한 하락 경고: 모델과 과거 하락 패턴이 모두 하락을 가리켜요.")
     if warn:
         lines.append(f"하락 경고: 공모가 아래로 끝날 확률 {prob['p_down'] * 100:.0f}% "
                      f"(경고 기준 {prob['threshold'] * 100:.0f}%)")
@@ -91,13 +98,13 @@ def format_alert(ipo: Ipo, site_url: str) -> dict:
     if pred.get("knn"):
         lines.append(f"비슷한 {pred['knn']['n']}개 중 {pred['knn']['down_count']}개 하락")
     if pred.get("conflict"):
-        lines.append("신호와 예측이 엇갈려요. 두 가지를 함께 보세요.")
+        lines.append("가격 예측은 상승이지만, 하락을 미리 잡는 데는 과거에 경고가 가격 예측보다 정확했어요." if level else "신호와 예측이 엇갈려요. 두 가지를 함께 보세요.")
     if ipo.unknown_count:
         lines.append(f"확인 불가 {ipo.unknown_count}개")
     lines.append(DISCLAIMER)
     unknown = f" · 확인 불가 {ipo.unknown_count}개" if ipo.flag_count == 0 and ipo.unknown_count else ""
     return {
-        "title": f"{ipo.name} ⚠{ipo.flag_count}개{unknown}{' · 하락 경고' if warn else ''} · 청약 {span}",
+        "title": f"{ipo.name} ⚠{ipo.flag_count}개{unknown}{_level_text(level)} · 청약 {span}",
         "message": "\n".join(lines),
         "click": f"{site_url.rstrip('/')}/#{ipo.no}",
     }
@@ -120,7 +127,8 @@ def format_pre_alert(ipo: Ipo, site_url: str) -> dict:
         lines.append(f"과거 검증: 하락의 {od['recall'] * 100:.0f}%를 미리 잡았고, 경고의 {od['precision'] * 100:.0f}%가 맞았어요.")
     lines.append(DISCLAIMER)
     return {
-        "title": f"{ipo.name} 상장 전 · {'시초가 하락 경고' if od['warn'] else '시초가 예상'}",
+        "title": f"{ipo.name} 상장 전 · "
+                 f"{'시초가 강한 하락 경고' if ipo.warning == 'strong' else '시초가 하락 경고' if od['warn'] else '시초가 예상'}",
         "message": "\n".join(lines),
         "click": f"{site_url.rstrip('/')}/#{ipo.no}",
     }

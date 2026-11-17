@@ -64,3 +64,24 @@ def test_pattern_stats_counts_only_current_regime_listings_with_results():
     s = pattern_stats(hist, since="2023-06-26")["lock_comp"]
     assert s["n"] == 3
     assert s["close_down"] == pytest.approx(2 / 3) and s["open_down"] == pytest.approx(1 / 3)
+
+
+PRE = {"key": "lock_comp", "kind": "risk", "phase": "pre"}
+POST = {"key": "retail_lock", "kind": "risk", "phase": "post"}
+SAFE_P = {"key": "strong", "kind": "safe", "phase": "pre"}
+
+
+def test_warning_level_before_subscription():
+    from ipo.patterns import warning_level
+    warn = {"prob": {"warn": True}}
+    assert warning_level(warn, [PRE]) == "strong"
+    assert warning_level(warn, [SAFE_P]) == "warn"
+    assert warning_level({"prob": {"warn": False}}, [PRE]) is None
+    assert warning_level(None, [PRE]) is None
+
+
+def test_warning_level_after_subscription_uses_open_judgment_and_post_pattern():
+    from ipo.patterns import warning_level
+    assert warning_level({"prob": {"warn": True}, "open_down": {"warn": True}}, [POST]) == "strong"
+    assert warning_level({"prob": {"warn": True}, "open_down": {"warn": True}}, [PRE]) == "warn"
+    assert warning_level({"prob": {"warn": True}, "open_down": {"warn": False}}, [PRE, POST]) is None

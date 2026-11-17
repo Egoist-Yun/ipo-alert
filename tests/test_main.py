@@ -93,3 +93,10 @@ def test_every_scored_stock_carries_a_pattern_list(tmp_path):
     run(tmp_path, None, "", NOW, fetch=fake_fetch, post=Rec())
     data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
     assert all(isinstance(i["patterns"], list) for i in data["ipos"])
+
+
+
+def test_every_stock_has_a_warning_level_field(tmp_path):
+    run(tmp_path, None, "", NOW, fetch=fake_fetch, post=Rec())
+    data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
+    assert all(i["warning"] in (None, "warn", "strong") for i in data["ipos"])

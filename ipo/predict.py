@@ -8,6 +8,7 @@ import numpy as np
 from ipo import config
 from ipo.collect import market_heat, market_mood
 from ipo.models import Ipo, first_day_return
+from ipo.patterns import PATTERNS
 
 
 @dataclass(frozen=True)
@@ -418,7 +419,9 @@ def predict_for(ipo: Ipo, history: list[Ipo], eval_result: dict | None,
         if calibration:
             c = calibration["close"]
             prob.update(threshold=c["threshold"], warn=bool(prob["p_down"] >= c["threshold"]),
-                        precision=c["test"]["precision"], recall=c["test"]["recall"])
+                        precision=c["test"]["precision"], recall=c["test"]["recall"],
+                        strong_precision=c.get("strong_test", {}).get("precision"),
+                        strong_recall=c.get("strong_test", {}).get("recall"))
 
     open_down = None
     if subscribed and calibration and full_history:
@@ -428,7 +431,9 @@ def predict_for(ipo: Ipo, history: list[Ipo], eval_result: dict | None,
         p = fit_logistic(fh, fctx, names + ["retail"], open_return).predict(ipo, fctx[ipo.no])
         c = calibration["open"]
         open_down = {"p_down": p, "threshold": c["threshold"], "warn": bool(p >= c["threshold"]),
-                     "precision": c["test"]["precision"], "recall": c["test"]["recall"], "n": len(fh)}
+                     "precision": c["test"]["precision"], "recall": c["test"]["recall"], "n": len(fh),
+                     "strong_precision": c.get("strong_test", {}).get("precision"),
+                     "strong_recall": c.get("strong_test", {}).get("recall")}
     upbeat = ((knn is not None and knn["median"] > 0) or (close is not None and close["return"] > 0)
               or (prob is not None and prob["p_down"] < 0.5))
     conflict = ipo.flag_count >= config.CONFLICT_FLAGS and upbeat
@@ -464,16 +469,24 @@ def _down_scores(window: list[Ipo], train: list[Ipo], ctxs: dict, names: list[st
         past = [p for p in train if p.listing_date < cutoff and yfun(p) is not None]
         if len(past) < config.MIN_TRAIN:
             continue
-        out.append((fit_logistic(past, ctxs, names, yfun).predict(t, ctxs.get(t.no)), yfun(t) < 0))
+        out.append((fit_logistic(past, ctxs, names, yfun).predict(t, ctxs.get(t.no)), yfun(t) < 0, t))
     return out
 
 
-def _warn_stats(pairs: list[tuple], th: float) -> dict:
-    pos = sum(1 for _, y in pairs if y)
-    warned = [y for p, y in pairs if p >= th]
+def _warn_stats(pairs: list[tuple], th: float, agree=None) -> dict:
+    pos = sum(1 for _, y, _t in pairs if y)
+    warned = [y for p, y, t in pairs if p >= th and (agree is None or agree(t))]
     return {"recall": (sum(warned) / pos) if pos else 0.0,
             "precision": (sum(warned) / len(warned)) if warned else 0.0,
             "warned": len(warned), "n_down": pos, "n": len(pairs)}
+
+
+def _agree_close(t: Ipo) -> bool:
+    return any(p.kind == "risk" and p.phase == "pre" and p.test(t) is True for p in PATTERNS)
+
+
+def _agree_open(t: Ipo) -> bool:
+    return any(p.key == "retail_lock" and p.test(t) is True for p in PATTERNS)
 
 
 def calibrate(full_history: list[Ipo], recent: list[Ipo], names: list[str]) -> dict:
@@ -488,8 +501,10 @@ def calibrate(full_history: list[Ipo], recent: list[Ipo], names: list[str]) -> d
                                    ("open", full, names + ["retail"], open_return)):
         v = _down_scores(val, train, ctxs, cols, yfun)
         te = _down_scores(test, train, ctxs, cols, yfun)
-        th = warning_threshold([p for p, _ in v], [y for _, y in v])
-        out[key] = {"threshold": th, "validation": _warn_stats(v, th), "test": _warn_stats(te, th)}
+        th = warning_threshold([x[0] for x in v], [x[1] for x in v])
+        agree = _agree_close if key == "close" else _agree_open
+        out[key] = {"threshold": th, "validation": _warn_stats(v, th), "test": _warn_stats(te, th),
+                    "strong_validation": _warn_stats(v, th, agree), "strong_test": _warn_stats(te, th, agree)}
     return out
 
 
