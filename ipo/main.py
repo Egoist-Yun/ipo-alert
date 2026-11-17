@@ -61,7 +61,8 @@ def _build(data_dir: Path, now_kst: datetime, fetch) -> list:
         if not ipo.sub_start or ipo.sub_start < cutoff:
             continue
         scored = score(ipo, mood)
-        out.append(replace(scored, prediction=predict_for(scored, history, ev, names)))
+        listed = scored.first_close is not None  # result is known; a prediction would be trained on itself
+        out.append(replace(scored, prediction=None if listed else predict_for(scored, history, ev, names)))
     return sorted(out, key=lambda i: (i.sub_start, i.no))
 
 

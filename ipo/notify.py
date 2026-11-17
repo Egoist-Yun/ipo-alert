@@ -64,7 +64,7 @@ def format_alert(ipo: Ipo, site_url: str) -> dict:
     if parts:
         lines.append(" · ".join(parts))
     if pred.get("conflict"):
-        lines.append("신호와 예측이 엇갈려요. 신호 개수를 더 믿을 만해요.")
+        lines.append("신호와 예측이 엇갈려요. 두 가지를 함께 보세요.")
     if ipo.unknown_count:
         lines.append(f"확인 불가 {ipo.unknown_count}개")
     lines.append(DISCLAIMER)

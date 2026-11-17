@@ -66,3 +66,12 @@ def test_calendar_range_drops_old_stocks(tmp_path):
     run(tmp_path, None, "", NOW, fetch=fake_fetch, post=Rec())
     data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
     assert all(i["sub_start"] and i["sub_start"] >= "2026-08-19" for i in data["ipos"])
+
+
+def test_already_listed_stock_gets_no_prediction(tmp_path):
+    run(tmp_path, None, "", NOW, fetch=fake_fetch, post=Rec())
+    data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
+    nexi = next(i for i in data["ipos"] if i["name"] == "넥스아이")
+    assert nexi["first_close"] == 4810 and nexi["prediction"] is None
+    ucast = next(i for i in data["ipos"] if i["name"] == "유캐스트")
+    assert ucast["prediction"] is not None

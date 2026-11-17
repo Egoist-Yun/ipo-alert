@@ -121,10 +121,18 @@ function renderDetail() {
     for (const s of ipo.signals) {
       nodes.push(kv(s.label, (s.flag ? '⚠ ' : '') + valueText(s), s.flag === true ? 'flag' : s.flag === null ? 'unknown' : ''));
     }
-    nodes.push(...predictionNodes(ipo));
+    nodes.push(...(ipo.first_close != null ? resultNodes(ipo) : predictionNodes(ipo)));
   }
   if (ipo.url) nodes.push(h('a', { class: 'btn-medium', href: ipo.url, target: '_blank', rel: 'noopener' }, '원문 보기'));
   box.replaceChildren(h('div', { class: 'panel' }, nodes));
+}
+
+function resultNodes(ipo) {
+  const base = ipo.final_price;
+  const nodes = [h('h4', {}, '상장 결과'), kv('공모가', won(base))];
+  if (ipo.open_price != null) nodes.push(kv('시초가', `${won(ipo.open_price)} (${pct(ipo.open_price / base - 1)})`));
+  nodes.push(kv('첫날 종가', `${won(ipo.first_close)} (${pct(ipo.first_close / base - 1)})`));
+  return nodes;
 }
 
 function predictionNodes(ipo) {
@@ -138,7 +146,7 @@ function predictionNodes(ipo) {
   const nodes = [];
   const acc = p.accuracy || {};
   if (p.conflict) {
-    nodes.push(h('p', { class: 'summary' }, '신호와 예측이 엇갈려요. 신호 개수를 더 믿을 만해요.'));
+    nodes.push(h('p', { class: 'summary' }, '신호와 예측이 엇갈려요. 두 가지를 함께 보세요.'));
   }
   if (p.prob) {
     nodes.push(h('h4', {}, '공모가 아래로 끝날 확률'));
