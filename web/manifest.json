@@ -1,0 +1,9 @@
+{
+  "name": "공모주 청약 달력",
+  "short_name": "공모주",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
