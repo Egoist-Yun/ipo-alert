@@ -13,3 +13,11 @@ BASE_URL = "https://www.38.co.kr/html/fund/"
 from datetime import timedelta, timezone
 
 KST = timezone(timedelta(hours=9))  # fixed offset: Windows lacks a tz database by default
+
+K_NEIGHBORS = 10
+RIDGE_ALPHA = 1.0
+RETURN_MIN = -0.40
+RETURN_MAX = 3.00
+EVAL_TEST_RATIO = 0.3
+MIN_TRAIN = 30
+MIN_VALID_DIMS = 3
