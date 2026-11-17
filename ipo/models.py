@@ -22,6 +22,12 @@ class Ipo:
     lockup_pct: float | None = None
     below_band_pct: float | None = None
     float_pct: float | None = None
+    revenue_mil: int | None = None
+    net_income_mil: int | None = None
+    capital_mil: int | None = None
+    par_value: int | None = None
+    old_share_pct: float | None = None
+    inst_count: int | None = None
     open_price: int | None = None
     first_close: int | None = None
     signals: list[dict] = field(default_factory=list)

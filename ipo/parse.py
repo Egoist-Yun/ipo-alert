@@ -138,6 +138,22 @@ def _last_pct(cells: list[str]) -> float | None:
     return None
 
 
+def _old_share(offering: str | None) -> float | None:
+    if not offering:
+        return None
+    old = re.search(r"구주매출[^()]*\((\d+(?:\.\d+)?)%\)", offering)
+    if old:
+        return float(old.group(1))
+    new = re.search(r"신주모집[^()]*\((\d+(?:\.\d+)?)%\)", offering)
+    return round(100.0 - float(new.group(1)), 2) if new else None
+
+
+def _inst_count(soup) -> int | None:
+    text = soup.get_text(" ", strip=True)
+    m = re.search(r"참여건수\s*\(단위:건\)\s*신청주식수\s*\(단위:주\)\s*단순경쟁\s*([\d,]+)", text)
+    return int(m.group(1).replace(",", "")) if m else None
+
+
 def parse_detail(html: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
     band = re.findall(r"\d[\d,]*", _label_value(soup, "희망공모가액") or "")
@@ -172,4 +188,10 @@ def parse_detail(html: str) -> dict:
         "lockup_pct": _num(lock) if "%" in lock else None,
         "below_band_pct": below_band,
         "float_pct": float_pct,
+        "revenue_mil": _int(_label_value(soup, "매출액") or ""),
+        "net_income_mil": _int(_label_value(soup, "순이익") or ""),
+        "capital_mil": _int(_label_value(soup, "자본금") or ""),
+        "par_value": _int(_label_value(soup, "액면가") or ""),
+        "old_share_pct": _old_share(_label_value(soup, "상장공모")),
+        "inst_count": _inst_count(soup),
     }
