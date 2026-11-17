@@ -53,7 +53,7 @@ def signal_backtest(history: list[Ipo]) -> str:
         ret = first_day_return(ipo)
         if ipo.is_spac or ret is None or not ipo.listing_date:
             continue
-        scored = score(ipo, market_mood(history, ipo.listing_date))
+        scored = score(ipo, market_mood(history, ipo.sub_start or ipo.listing_date))
         groups.setdefault(scored.flag_count, []).append(ret)
     lines = ["| 신호 개수 | 종목 수 | 공모가 아래로 끝난 비율 | 첫날 등락률 가운데 값 |",
              "|---|---|---|---|"]
