@@ -86,3 +86,10 @@ def test_listing_result_is_filled_from_history_when_tables_lack_it(tmp_path):
     data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
     ucast = next(i for i in data["ipos"] if i["no"] == 2352)
     assert (ucast["open_price"], ucast["first_close"]) == (25000, 21000) and ucast["prediction"] is None
+
+
+
+def test_every_scored_stock_carries_a_pattern_list(tmp_path):
+    run(tmp_path, None, "", NOW, fetch=fake_fetch, post=Rec())
+    data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
+    assert all(isinstance(i["patterns"], list) for i in data["ipos"])

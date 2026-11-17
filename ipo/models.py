@@ -35,6 +35,7 @@ class Ipo:
     flag_count: int = 0
     unknown_count: int = 0
     prediction: dict | None = None
+    patterns: list[dict] = field(default_factory=list)
 
 
 def first_day_return(ipo: Ipo) -> float | None:

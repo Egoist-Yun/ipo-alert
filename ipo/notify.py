@@ -54,9 +54,26 @@ def _value_text(sig: dict) -> str:
     return f"{v}%"
 
 
+def _pattern_line(patterns: list[dict], use_open: bool) -> str | None:
+    key = "open_down" if use_open else "close_down"
+    where = "시초가 공모가 아래" if use_open else "첫날 공모가 아래"
+    risks = [p for p in patterns if p["kind"] == "risk" and p.get(key) is not None]
+    if risks:
+        top = max(risks, key=lambda p: p[key])
+        return f"과거 하락 패턴: {top['label']} (과거 {top['n']}개 중 {top[key] * 100:.0f}%가 {where})"
+    safes = [p for p in patterns if p["kind"] == "safe" and p.get(key) is not None]
+    if safes:
+        top = min(safes, key=lambda p: p[key])
+        return f"과거 하락이 드문 패턴: {top['label']} (과거 {top['n']}개 중 {top[key] * 100:.0f}%만 {where})"
+    return None
+
+
 def format_alert(ipo: Ipo, site_url: str) -> dict:
     span = f"{_md(ipo.sub_start)}~{_md(ipo.sub_end)}" if ipo.sub_start and ipo.sub_end else "일정 미정"
     lines = [f"⚠ {s['label']}: {_value_text(s)}" for s in ipo.signals if s["flag"] is True]
+    pattern = _pattern_line(ipo.patterns, use_open=False)
+    if pattern:
+        lines.append(pattern)
     pred = ipo.prediction or {}
     prob = pred.get("prob")
     warn = bool(prob and prob.get("warn"))
@@ -91,6 +108,9 @@ def format_pre_alert(ipo: Ipo, site_url: str) -> dict:
     pred = ipo.prediction or {}
     od = pred["open_down"]
     lines = [f"시초가 하락 확률 {od['p_down'] * 100:.0f}% (경고 기준 {od['threshold'] * 100:.0f}%)"]
+    pattern = _pattern_line(ipo.patterns, use_open=True)
+    if pattern:
+        lines.append(pattern)
     op = pred.get("open")
     if op:
         lines.append(f"시초가 예상 {op['price']:,}원 ({op['return'] * 100:+.0f}%, ±{op['mae'] * 100:.0f}%p)")

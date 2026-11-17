@@ -151,3 +151,28 @@ def test_close_warning_line_and_title():
     p = format_alert(replace(NEXI, prediction=pred), "https://s/")
     assert p["title"] == "넥스아이 ⚠5개 · 하락 경고 · 청약 11/3~11/4"
     assert "하락 경고: 공모가 아래로 끝날 확률 35% (경고 기준 30%)" in p["message"]
+
+
+RISK = {"key": "lock_comp", "label": "의무보유확약 1% 미만 + 기관 경쟁률 300대 1 미만", "phase": "pre", "kind": "risk",
+        "n": 24, "close_down": 0.75, "open_down": 0.5}
+POST_RISK = {"key": "retail_lock", "label": "일반청약 경쟁률 100대 1 미만 + 의무보유확약 1% 미만", "phase": "post",
+             "kind": "risk", "n": 24, "close_down": 0.88, "open_down": 0.58}
+SAFE = {"key": "strong", "label": "기관 경쟁률 1000대 1 초과 + 의무보유확약 3% 이상", "phase": "pre", "kind": "safe",
+        "n": 82, "close_down": 0.1, "open_down": 0.0}
+
+
+def test_alert_shows_strongest_risk_pattern():
+    p = format_alert(replace(NEXI, patterns=[SAFE, RISK]), "https://s/")
+    assert "과거 하락 패턴: 의무보유확약 1% 미만 + 기관 경쟁률 300대 1 미만 (과거 24개 중 75%가 첫날 공모가 아래)" in p["message"]
+    assert "하락이 드문" not in p["message"]
+
+
+def test_alert_shows_safe_pattern_when_no_risk_pattern():
+    p = format_alert(replace(NEXI, patterns=[SAFE]), "https://s/")
+    assert "과거 하락이 드문 패턴: 기관 경쟁률 1000대 1 초과 + 의무보유확약 3% 이상 (과거 82개 중 10%만 첫날 공모가 아래)" in p["message"]
+
+
+def test_pre_listing_alert_uses_open_rate_of_post_pattern():
+    from ipo.notify import format_pre_alert
+    p = format_pre_alert(replace(LISTING_SOON, patterns=[RISK, POST_RISK]), "https://s/")
+    assert "과거 하락 패턴: 일반청약 경쟁률 100대 1 미만 + 의무보유확약 1% 미만 (과거 24개 중 58%가 시초가 공모가 아래)" in p["message"]

@@ -121,10 +121,31 @@ function renderDetail() {
     for (const s of ipo.signals) {
       nodes.push(kv(s.label, (s.flag ? '⚠ ' : '') + valueText(s), s.flag === true ? 'flag' : s.flag === null ? 'unknown' : ''));
     }
+    nodes.push(...patternNodes(ipo));
     nodes.push(...(ipo.first_close != null ? resultNodes(ipo) : predictionNodes(ipo)));
   }
   if (ipo.url) nodes.push(h('a', { class: 'btn-medium', href: ipo.url, target: '_blank', rel: 'noopener' }, '원문 보기'));
   box.replaceChildren(h('div', { class: 'panel' }, nodes));
+}
+
+function patternNodes(ipo) {
+  const list = ipo.patterns || [];
+  if (!list.length) return [];
+  const nodes = [h('h4', {}, '과거 패턴')];
+  const risks = list.filter(p => p.kind === 'risk');
+  const safes = list.filter(p => p.kind === 'safe');
+  for (const p of risks) {
+    const rate = p.close_down != null ? `${(p.close_down * 100).toFixed(0)}%` : '-';
+    const open = p.phase === 'post' && p.open_down != null ? ` · 시초가 ${(p.open_down * 100).toFixed(0)}%` : '';
+    nodes.push(kv(p.label, `하락 ${rate}${open}`, 'flag'));
+    nodes.push(h('p', { class: 'note' }, `2023년 6월 이후 같은 조건의 ${p.n}개 중 첫날 공모가 아래로 끝난 비율${p.phase === 'post' ? ' (청약 후에 알 수 있는 조건)' : ''}`));
+  }
+  for (const p of safes) {
+    nodes.push(kv(p.label, `하락 ${(p.close_down * 100).toFixed(0)}%`));
+    nodes.push(h('p', { class: 'note' }, `과거 하락이 드문 패턴이에요. 2023년 6월 이후 같은 조건의 ${p.n}개 기준.`));
+  }
+  nodes.push(h('p', { class: 'note' }, '함께 나타난 특성일 뿐, 하락의 원인이라는 뜻은 아니에요.'));
+  return nodes;
 }
 
 function resultNodes(ipo) {

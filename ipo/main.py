@@ -15,6 +15,7 @@ from ipo.history import load_history, save_history, update_history
 from ipo.notify import (due_alerts, failure_alert, format_alert, format_pre_alert, load_state, mark_sent,
                         save_state,
                         send)
+from ipo.patterns import match_patterns, pattern_stats
 from ipo.predict import _usable, calibrate, coverage_names, evaluate, predict_for, select_features
 from ipo.signals import score
 
@@ -59,6 +60,7 @@ def _build(data_dir: Path, now_kst: datetime, fetch) -> list:
     names, cal = _model_config(data_dir, recent, history)
     ev = evaluate(recent, names)
     post_ev = evaluate(recent, names + ["retail"])
+    stats = pattern_stats(history)
     cutoff = (now_kst.date() - timedelta(days=CALENDAR_DAYS_BACK)).isoformat()
     known = {h.no: h for h in history}
     out = []
@@ -73,7 +75,7 @@ def _build(data_dir: Path, now_kst: datetime, fetch) -> list:
         listed = scored.first_close is not None  # result is known; a prediction would be trained on itself
         pred = None if listed else predict_for(scored, recent, ev, names, calibration=cal,
                                                 full_history=history, post_eval=post_ev)
-        out.append(replace(scored, prediction=pred))
+        out.append(replace(scored, prediction=pred, patterns=match_patterns(scored, stats)))
     return sorted(out, key=lambda i: (i.sub_start, i.no))
 
 
