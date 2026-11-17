@@ -1,0 +1,69 @@
+name: update
+
+on:
+  schedule:
+    - cron: "0 23 * * *"   # 08:00 KST
+    - cron: "0 9 * * *"    # 18:00 KST
+  workflow_dispatch:
+
+concurrency:
+  group: ipo-update
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - run: python -m pytest -q
+
+      - name: Update data
+        id: run
+        continue-on-error: true
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+        run: python -m ipo.main
+
+      - name: Commit data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          git diff --cached --quiet || git commit -m "data: update $(date -u +%F-%H%M)"
+          git push
+
+      - name: Build site
+        run: |
+          mkdir _site
+          cp web/index.html web/style.css web/app.js web/calendar.js web/manifest.json web/icon.svg _site/
+          if [ -f data/ipos.json ]; then cp data/ipos.json _site/ipos.json; fi
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+      - name: Fail the run if the update step failed
+        if: steps.run.outcome == 'failure'
+        run: exit 1
