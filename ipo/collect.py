@@ -71,12 +71,25 @@ def collect_current(fetch=get_html, cache: dict | None = None, today: str | None
     return list(by_no.values())
 
 
-def market_mood(history: list[Ipo], before: str) -> float | None:
+def _recent_window(history: list[Ipo], before: str) -> list[Ipo] | None:
     done = [i for i in history
             if not i.is_spac and i.listing_date and i.listing_date < before
             and first_day_return(i) is not None]
     done.sort(key=lambda i: (i.listing_date, i.no), reverse=True)
     window = done[: config.MOOD_WINDOW]
-    if len(window) < config.MOOD_WINDOW:
+    return window if len(window) >= config.MOOD_WINDOW else None
+
+
+def market_mood(history: list[Ipo], before: str) -> float | None:
+    window = _recent_window(history, before)
+    if window is None:
         return None
     return sum(1 for i in window if first_day_return(i) < 0) / len(window)
+
+
+def market_heat(history: list[Ipo], before: str) -> float | None:
+    """Median first-day return of the most recent listings (how hot the market is, not just how many fell)."""
+    window = _recent_window(history, before)
+    if window is None:
+        return None
+    return float(sorted(first_day_return(i) for i in window)[len(window) // 2])

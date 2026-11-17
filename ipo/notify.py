@@ -53,6 +53,8 @@ def format_alert(ipo: Ipo, site_url: str) -> dict:
     span = f"{_md(ipo.sub_start)}~{_md(ipo.sub_end)}" if ipo.sub_start and ipo.sub_end else "일정 미정"
     lines = [f"⚠ {s['label']}: {_value_text(s)}" for s in ipo.signals if s["flag"] is True]
     pred = ipo.prediction or {}
+    if pred.get("prob"):
+        lines.append(f"공모가 아래로 끝날 확률 {pred['prob']['p_down'] * 100:.0f}%")
     parts = []
     if pred.get("knn"):
         parts.append(f"비슷한 {pred['knn']['n']}개 중 {pred['knn']['down_count']}개 하락")
@@ -61,6 +63,8 @@ def format_alert(ipo: Ipo, site_url: str) -> dict:
         parts.append(f"모델 예측 {m['return'] * 100:+.0f}% (±{m['mae'] * 100:.0f}%p)")
     if parts:
         lines.append(" · ".join(parts))
+    if pred.get("conflict"):
+        lines.append("신호와 예측이 엇갈려요. 신호 개수를 더 믿을 만해요.")
     if ipo.unknown_count:
         lines.append(f"확인 불가 {ipo.unknown_count}개")
     lines.append(DISCLAIMER)

@@ -14,10 +14,26 @@ from ipo.fetch import get_html
 from ipo.history import load_history, save_history, update_history
 from ipo.notify import (due_alerts, failure_alert, format_alert, load_state, mark_sent, save_state,
                         send)
-from ipo.predict import evaluate, predict_for
+from ipo.predict import _usable, coverage_names, evaluate, predict_for, select_features
 from ipo.signals import score
 
 CALENDAR_DAYS_BACK = 90
+RESELECT_EVERY = 20  # re-run variable selection after this many new listings
+
+
+def _model_names(data_dir: Path, history: list) -> list[str]:
+    """Variables chosen by walk-forward forward selection; cached in data/model.json."""
+    usable = len(_usable(history))
+    path = data_dir / "model.json"
+    if path.exists():
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        if saved.get("names") and usable - saved.get("n", 0) < RESELECT_EVERY:
+            return saved["names"]
+    names = select_features(history)
+    if not names:
+        return coverage_names(_usable(history))
+    _atomic_write(path, json.dumps({"names": names, "n": usable}, ensure_ascii=False))
+    return names
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -37,14 +53,15 @@ def _build(data_dir: Path, now_kst: datetime, fetch) -> list:
     if not current:
         raise RuntimeError("no IPO rows collected")
     mood = market_mood(history, today)
-    ev = evaluate(history)
+    names = _model_names(data_dir, history)
+    ev = evaluate(history, names)
     cutoff = (now_kst.date() - timedelta(days=CALENDAR_DAYS_BACK)).isoformat()
     out = []
     for ipo in current:
         if not ipo.sub_start or ipo.sub_start < cutoff:
             continue
         scored = score(ipo, mood)
-        out.append(replace(scored, prediction=predict_for(scored, history, ev)))
+        out.append(replace(scored, prediction=predict_for(scored, history, ev, names)))
     return sorted(out, key=lambda i: (i.sub_start, i.no))
 
 

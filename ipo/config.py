@@ -21,3 +21,11 @@ RETURN_MAX = 3.00
 EVAL_TEST_RATIO = 0.3
 MIN_TRAIN = 30
 MIN_VALID_DIMS = 3
+
+LOGIT_ALPHA = 3.0
+CONFLICT_FLAGS = 4  # this many risk signals but an upbeat prediction -> tell the user they disagree
+PROB_CLIP = 0.02
+SELECT_MIN_COVERAGE = 0.5
+SELECT_MAX_FEATURES = 8
+SELECT_MIN_GAIN = 0.003
+SELECT_CHUNK = 5

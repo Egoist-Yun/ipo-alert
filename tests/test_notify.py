@@ -92,3 +92,15 @@ def test_state_roundtrip_and_missing_file(tmp_path):
 def test_title_with_zero_flags_but_unknowns_does_not_look_safe():
     p = format_alert(replace(NEXI, flag_count=0, unknown_count=4), "https://s/")
     assert p["title"] == "넥스아이 ⚠0개 · 확인 불가 4개 · 청약 11/3~11/4"
+
+
+def test_format_shows_probability_and_conflict_line():
+    pred = {"knn": None, "model": None, "prob": {"p_down": 0.31, "n": 260}, "conflict": True, "accuracy": None}
+    p = format_alert(replace(NEXI, prediction=pred), "https://s/")
+    assert "공모가 아래로 끝날 확률 31%" in p["message"]
+    assert "신호와 예측이 엇갈려요" in p["message"]
+
+
+def test_format_without_conflict_has_no_conflict_line():
+    pred = {"knn": None, "model": None, "prob": {"p_down": 0.8, "n": 260}, "conflict": False, "accuracy": None}
+    assert "엇갈려요" not in format_alert(replace(NEXI, prediction=pred), "https://s/")["message"]

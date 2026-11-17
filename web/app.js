@@ -129,16 +129,27 @@ function renderDetail() {
 
 function predictionNodes(ipo) {
   const p = ipo.prediction;
-  if (!p || (!p.knn && !p.model)) {
+  if (!p || (!p.knn && !p.model && !p.prob)) {
     const why = p && p.accuracy
       ? '과거 기록으로 검증했을 때 기준보다 정확하지 않아서 보여주지 않아요.'
       : '비교할 과거 기록이 아직 부족해요.';
     return [h('h4', {}, '첫날 가격 예측'), h('p', { class: 'p' }, `예측을 만들지 못했어요. ${why}`)];
   }
-  const nodes = [h('h4', {}, '비슷했던 과거 공모주')];
+  const nodes = [];
   const acc = p.accuracy || {};
+  if (p.conflict) {
+    nodes.push(h('p', { class: 'summary' }, '신호와 예측이 엇갈려요. 신호 개수를 더 믿을 만해요.'));
+  }
+  if (p.prob) {
+    nodes.push(h('h4', {}, '공모가 아래로 끝날 확률'));
+    nodes.push(kv('첫날 종가 기준', `${(p.prob.p_down * 100).toFixed(0)}%`, p.prob.p_down >= 0.5 ? 'flag' : ''));
+    if (acc.prob && acc.prob_base) {
+      nodes.push(h('p', { class: 'note' }, `과거 검증: 하락 여부 적중 ${(acc.prob.accuracy * 100).toFixed(0)}% (과거 하락 비율만 보고 찍으면 ${(acc.prob_base.accuracy * 100).toFixed(0)}%)`));
+    }
+  }
   if (p.knn) {
     const k = p.knn;
+    nodes.push(h('h4', {}, '비슷했던 과거 공모주'));
     nodes.push(h('p', { class: 'p' }, `${k.n}개 중 ${k.down_count}개가 첫날 공모가 아래로 마감했어요.`));
     nodes.push(kv('비슷한 종목의 가운데 절반 범위', `${won(k.price_low)} ~ ${won(k.price_high)}`));
     nodes.push(kv('가운데 값', pct(k.median)));
