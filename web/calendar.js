@@ -44,6 +44,9 @@ export function badgeInfo(ipo) {
   if (ipo.inst_competition == null) return { text: '대기 중', tone: 'wait' };
   const flags = ipo.flag_count ?? 0;
   const unknown = ipo.unknown_count ?? 0;
+  const p = ipo.prediction || {};
+  const warn = p.open_down ? p.open_down.warn : (p.prob && p.prob.warn);
+  if (warn) return { text: '하락 경고', tone: 'risk' };
   if (flags > 0) return { text: `⚠ ${flags}`, tone: 'risk' };
   if (unknown >= 2) return { text: `확인 불가 ${unknown}`, tone: 'wait' };
   return { text: unknown ? `신호 없음 · 확인 불가 ${unknown}` : '신호 없음', tone: '' };

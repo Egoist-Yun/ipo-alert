@@ -62,8 +62,11 @@ FEATURES = {
     "offer_ratio": lambda i, c: _ratio(i.offer_amount_mil, _mcap(i)),
     "psr": lambda i, c: _log(_ratio(_mcap(i), i.revenue_mil)),
     "inst_count": lambda i, c: _log(i.inst_count),
+    "retail": lambda i, c: _log(i.retail_competition),  # known only after the subscription closes
 }
 FEATURE_NAMES = list(FEATURES)
+POST_SUBSCRIPTION = {"retail"}  # never offered to the pre-subscription model
+PRE_NAMES = [n for n in FEATURE_NAMES if n not in POST_SUBSCRIPTION]
 
 
 def features(ipo: Ipo, ctx: Ctx | None, names: list[str] | None = None) -> list[float | None]:
@@ -108,7 +111,7 @@ def _coverage(items: list[Ipo], ctxs: dict | None, name: str) -> float:
 
 
 def coverage_names(items: list[Ipo], ctxs: dict | None = None) -> list[str]:
-    return [n for n in FEATURE_NAMES if _coverage(items, ctxs, n) >= config.SELECT_MIN_COVERAGE]
+    return [n for n in PRE_NAMES if _coverage(items, ctxs, n) >= config.SELECT_MIN_COVERAGE]
 
 
 def _stats(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -214,11 +217,12 @@ class LogitModel:
         return _clip_p(float(1 / (1 + np.exp(-(self.w[0] + z @ self.w[1:])))))
 
 
-def fit_logistic(history: list[Ipo], ctxs: dict | None = None, names: list[str] | None = None) -> LogitModel:
-    """P(first-day close < offer price), ridge-penalised logistic regression fitted by IRLS."""
+def fit_logistic(history: list[Ipo], ctxs: dict | None = None, names: list[str] | None = None,
+                 yfun=first_day_return) -> LogitModel:
+    """P(return < 0) for yfun (first-day close by default), ridge-penalised logistic regression fitted by IRLS."""
     names = names or coverage_names(_usable(history), ctxs)
-    pool, scaler, Z = _design(_usable(history), ctxs, names)
-    y = np.array([1.0 if first_day_return(h) < 0 else 0.0 for h in pool])
+    pool, scaler, Z = _design([h for h in _usable(history) if yfun(h) is not None], ctxs, names)
+    y = np.array([1.0 if yfun(h) < 0 else 0.0 for h in pool])
     X = np.hstack([np.ones((len(pool), 1)), Z])
     reg = config.LOGIT_ALPHA * np.eye(X.shape[1])
     reg[0, 0] = 0.0
@@ -274,7 +278,7 @@ def select_features(history: list[Ipo], names: list[str] | None = None) -> list[
     if m <= vstart:
         return []
     ctxs = context_map(items)
-    cands = [c for c in (names or FEATURE_NAMES) if _coverage(sel, ctxs, c) >= config.SELECT_MIN_COVERAGE]
+    cands = [c for c in (names or PRE_NAMES) if _coverage(sel, ctxs, c) >= config.SELECT_MIN_COVERAGE]
 
     def score(cols: list[str]) -> float:
         total, count = 0.0, 0
@@ -370,7 +374,10 @@ def _prob_beats_base(ev: dict | None) -> bool:
 
 
 def predict_for(ipo: Ipo, history: list[Ipo], eval_result: dict | None,
-                names: list[str] | None = None) -> dict | None:
+                names: list[str] | None = None, calibration: dict | None = None,
+                full_history: list[Ipo] | None = None, post_eval: dict | None = None) -> dict | None:
+    """calibration: warning thresholds (see calibrate). full_history: 2015+ history used only for the
+    post-subscription open-down probability. post_eval: evaluate(recent, names + retail)."""
     if ipo.is_spac or ipo.final_price is None or ipo.inst_competition is None:
         return None
     pool = _usable(history)
@@ -386,26 +393,104 @@ def predict_for(ipo: Ipo, history: list[Ipo], eval_result: dict | None,
 
     enough = len(pool) >= config.MIN_TRAIN
 
-    def priced(key: str, base: str, yfun) -> dict | None:
-        if not (enough and _beats_baseline(eval_result, key, base)):
+    def priced(key: str, base: str, yfun, ev: dict | None, cols: list[str]) -> dict | None:
+        if not (enough and _beats_baseline(ev, key, base)):
             return None
-        e = _ensemble(ipo, pool, ctxs, names, yfun)
+        e = _ensemble(ipo, pool, ctxs, cols, yfun)
         if e is None:
             return None
         return {"return": e["ens"], "price": int(round(ipo.final_price * (1 + e["ens"]))),
-                "mae": eval_result[key]["mae"], "direction_acc": eval_result[key]["direction_acc"]}
+                "mae": ev[key]["mae"], "direction_acc": ev[key]["direction_acc"]}
 
-    close = priced("ens", "baseline", first_day_return)
-    opened = priced("open_ens", "open_baseline", open_return)
+    subscribed = ipo.retail_competition is not None
+    close = priced("ens", "baseline", first_day_return, eval_result, names)
+    opened = None
+    if subscribed and post_eval:
+        opened = priced("open_ens", "open_baseline", open_return, post_eval, names + ["retail"])
+        if opened:
+            opened["uses_retail"] = True
+    if opened is None:
+        opened = priced("open_ens", "open_baseline", open_return, eval_result, names)
 
     prob = None
     if enough and _prob_beats_base(eval_result):
         prob = {"p_down": fit_logistic(pool, ctxs, names).predict(ipo, ctx), "n": len(pool)}
+        if calibration:
+            c = calibration["close"]
+            prob.update(threshold=c["threshold"], warn=bool(prob["p_down"] >= c["threshold"]),
+                        precision=c["test"]["precision"], recall=c["test"]["recall"])
+
+    open_down = None
+    if subscribed and calibration and full_history:
+        fh = _usable(full_history)
+        fctx = context_map(fh)
+        fctx[ipo.no] = _target_ctx(ipo, fh, None)
+        p = fit_logistic(fh, fctx, names + ["retail"], open_return).predict(ipo, fctx[ipo.no])
+        c = calibration["open"]
+        open_down = {"p_down": p, "threshold": c["threshold"], "warn": bool(p >= c["threshold"]),
+                     "precision": c["test"]["precision"], "recall": c["test"]["recall"], "n": len(fh)}
     upbeat = ((knn is not None and knn["median"] > 0) or (close is not None and close["return"] > 0)
               or (prob is not None and prob["p_down"] < 0.5))
     conflict = ipo.flag_count >= config.CONFLICT_FLAGS and upbeat
-    return {"knn": knn, "open": opened, "close": close, "prob": prob, "conflict": conflict,
-            "accuracy": eval_result, "features": names}
+    return {"knn": knn, "open": opened, "close": close, "prob": prob, "open_down": open_down,
+            "conflict": conflict, "accuracy": eval_result, "features": names}
+
+
+def warning_threshold(scores: list[float], ys: list, recall: float = config.WARN_RECALL) -> float:
+    """Highest threshold on a 0.05 grid that still catches `recall` of the actual declines."""
+    pos = sum(1 for y in ys if y)
+    best = 0.05
+    for th in [round(float(x), 2) for x in np.arange(0.05, 0.96, 0.05)]:
+        caught = sum(1 for s, y in zip(scores, ys) if y and s >= th)
+        if pos and caught / pos >= recall:
+            best = th
+    return best
+
+
+def _windows(recent: list[Ipo]) -> tuple[list[Ipo], list[Ipo]]:
+    items = _sorted_items(recent)
+    n = len(items)
+    ts = n - max(1, round(config.EVAL_TEST_RATIO * n))
+    vs = max(config.MIN_TRAIN, int((1 - config.EVAL_TEST_RATIO) * ts))
+    return items[vs:ts], items[ts:]
+
+
+def _down_scores(window: list[Ipo], train: list[Ipo], ctxs: dict, names: list[str], yfun) -> list[tuple]:
+    out = []
+    for t in window:
+        if yfun(t) is None:
+            continue
+        cutoff = t.sub_start or t.listing_date
+        past = [p for p in train if p.listing_date < cutoff and yfun(p) is not None]
+        if len(past) < config.MIN_TRAIN:
+            continue
+        out.append((fit_logistic(past, ctxs, names, yfun).predict(t, ctxs.get(t.no)), yfun(t) < 0))
+    return out
+
+
+def _warn_stats(pairs: list[tuple], th: float) -> dict:
+    pos = sum(1 for _, y in pairs if y)
+    warned = [y for p, y in pairs if p >= th]
+    return {"recall": (sum(warned) / pos) if pos else 0.0,
+            "precision": (sum(warned) / len(warned)) if warned else 0.0,
+            "warned": len(warned), "n_down": pos, "n": len(pairs)}
+
+
+def calibrate(full_history: list[Ipo], recent: list[Ipo], names: list[str]) -> dict:
+    """Warning thresholds chosen on the validation window, then measured once on the test window.
+    close: pre-subscription P(close < offer) trained on recent listings only.
+    open: post-subscription P(open < offer) trained on the whole (2015+) history with retail competition."""
+    full = _sorted_items(full_history)
+    ctxs = context_map(full)
+    val, test = _windows(recent)
+    out = {}
+    for key, train, cols, yfun in (("close", _sorted_items(recent), names, first_day_return),
+                                   ("open", full, names + ["retail"], open_return)):
+        v = _down_scores(val, train, ctxs, cols, yfun)
+        te = _down_scores(test, train, ctxs, cols, yfun)
+        th = warning_threshold([p for p, _ in v], [y for _, y in v])
+        out[key] = {"threshold": th, "validation": _warn_stats(v, th), "test": _warn_stats(te, th)}
+    return out
 
 
 def report(history: list[Ipo], names: list[str] | None = None) -> str:

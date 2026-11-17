@@ -24,6 +24,11 @@ def due_alerts(ipos: list[Ipo], state: dict, now_kst: datetime) -> list[tuple[st
     for ipo in ipos:
         if ipo.is_spac or ipo.inst_competition is None:
             continue
+        pred = ipo.prediction or {}
+        key = f"pre:{ipo.no}"
+        not_listed = ipo.first_close is None and (not ipo.listing_date or date.fromisoformat(ipo.listing_date) >= today)
+        if key not in sent and pred.get("open_down") and not_listed:
+            due.append((key, ipo))
         if ipo.sub_end and date.fromisoformat(ipo.sub_end) < today:
             continue
         key = f"result:{ipo.no}"
@@ -53,8 +58,13 @@ def format_alert(ipo: Ipo, site_url: str) -> dict:
     span = f"{_md(ipo.sub_start)}~{_md(ipo.sub_end)}" if ipo.sub_start and ipo.sub_end else "일정 미정"
     lines = [f"⚠ {s['label']}: {_value_text(s)}" for s in ipo.signals if s["flag"] is True]
     pred = ipo.prediction or {}
-    if pred.get("prob"):
-        lines.append(f"공모가 아래로 끝날 확률 {pred['prob']['p_down'] * 100:.0f}%")
+    prob = pred.get("prob")
+    warn = bool(prob and prob.get("warn"))
+    if warn:
+        lines.append(f"하락 경고: 공모가 아래로 끝날 확률 {prob['p_down'] * 100:.0f}% "
+                     f"(경고 기준 {prob['threshold'] * 100:.0f}%)")
+    elif prob:
+        lines.append(f"공모가 아래로 끝날 확률 {prob['p_down'] * 100:.0f}%")
     parts = []
     for key, label in (("open", "시초가 예상"), ("close", "종가 예상")):
         if pred.get(key):
@@ -70,7 +80,27 @@ def format_alert(ipo: Ipo, site_url: str) -> dict:
     lines.append(DISCLAIMER)
     unknown = f" · 확인 불가 {ipo.unknown_count}개" if ipo.flag_count == 0 and ipo.unknown_count else ""
     return {
-        "title": f"{ipo.name} ⚠{ipo.flag_count}개{unknown} · 청약 {span}",
+        "title": f"{ipo.name} ⚠{ipo.flag_count}개{unknown}{' · 하락 경고' if warn else ''} · 청약 {span}",
+        "message": "\n".join(lines),
+        "click": f"{site_url.rstrip('/')}/#{ipo.no}",
+    }
+
+
+def format_pre_alert(ipo: Ipo, site_url: str) -> dict:
+    """After the subscription closes: open-price outlook using the retail competition."""
+    pred = ipo.prediction or {}
+    od = pred["open_down"]
+    lines = [f"시초가 하락 확률 {od['p_down'] * 100:.0f}% (경고 기준 {od['threshold'] * 100:.0f}%)"]
+    op = pred.get("open")
+    if op:
+        lines.append(f"시초가 예상 {op['price']:,}원 ({op['return'] * 100:+.0f}%, ±{op['mae'] * 100:.0f}%p)")
+    if ipo.retail_competition is not None:
+        lines.append(f"일반청약 경쟁률 {ipo.retail_competition:.0f}대 1")
+    if od["warn"]:
+        lines.append(f"과거 검증: 하락의 {od['recall'] * 100:.0f}%를 미리 잡았고, 경고의 {od['precision'] * 100:.0f}%가 맞았어요.")
+    lines.append(DISCLAIMER)
+    return {
+        "title": f"{ipo.name} 상장 전 · {'시초가 하락 경고' if od['warn'] else '시초가 예상'}",
         "message": "\n".join(lines),
         "click": f"{site_url.rstrip('/')}/#{ipo.no}",
     }

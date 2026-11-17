@@ -26,7 +26,8 @@ def apply_detail(ipo: Ipo, detail: dict) -> None:
     ipo.industry = detail["industry"]
     ipo.below_band_pct = detail["below_band_pct"]
     ipo.float_pct = detail["float_pct"]
-    for key in ("revenue_mil", "net_income_mil", "capital_mil", "par_value", "old_share_pct", "inst_count"):
+    for key in ("revenue_mil", "net_income_mil", "capital_mil", "par_value", "old_share_pct", "inst_count",
+                "retail_competition"):
         setattr(ipo, key, detail[key])
     _fill(ipo, **{k: detail[k] for k in (
         "band_low", "band_high", "final_price", "offer_amount_mil", "sub_start", "sub_end",

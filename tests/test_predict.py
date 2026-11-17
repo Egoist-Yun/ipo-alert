@@ -230,3 +230,71 @@ def test_open_metrics_skip_stocks_without_open_price():
     hist = [replace(h, open_price=None) if i % 2 else h for i, h in enumerate(synthetic())]
     ev = evaluate(hist, names=["comp"])
     assert ev["open_ens"]["n"] < ev["ens"]["n"]
+
+
+def test_retail_feature_is_log_of_retail_competition():
+    assert features(mk(1, retail_competition=13.26), None, ["retail"]) == [pytest.approx(math.log(13.26))]
+    assert features(mk(1), None, ["retail"]) == [None]
+
+
+def test_post_subscription_variable_never_used_before_subscription():
+    hist = [replace(h, retail_competition=(5.0 if h.inst_competition < 200 else 900.0)) for h in synthetic()]
+    assert "retail" not in select_features(hist)
+    from ipo.predict import coverage_names
+    assert "retail" not in coverage_names(hist)
+
+
+def retail_hist():
+    return [replace(h, retail_competition=(5.0 if h.inst_competition < 200 else 900.0)) for h in synthetic()]
+
+
+FAKE_CAL = {"close": {"threshold": 0.3, "test": {"precision": 0.6, "recall": 0.7}},
+            "open": {"threshold": 0.3, "test": {"precision": 0.8, "recall": 0.7}}}
+
+
+def test_warning_threshold_is_highest_grid_value_meeting_recall():
+    from ipo.predict import warning_threshold
+    scores, ys = [0.9, 0.8, 0.6, 0.3, 0.2], [1, 1, 0, 1, 0]
+    assert warning_threshold(scores, ys, recall=0.7) == 0.3
+    assert warning_threshold(scores, ys, recall=0.6) == 0.8
+
+
+def test_calibrate_reports_thresholds_from_validation_and_test_stats():
+    from ipo.predict import calibrate
+    cal = calibrate(retail_hist(), retail_hist(), ["comp"])
+    for key in ("close", "open"):
+        assert 0 < cal[key]["threshold"] < 1
+        for win in ("validation", "test"):
+            st = cal[key][win]
+            assert 0 <= st["recall"] <= 1 and st["n_down"] >= 1 and st["n"] >= st["n_down"]
+    assert cal["open"]["test"]["recall"] >= 0.7
+
+
+def test_predict_for_adds_open_down_only_after_subscription():
+    hist = retail_hist()
+    after = predict_for(mk(900, comp=40, ret=None, retail_competition=4.0), hist, good_ev(), names=["comp"],
+                        calibration=FAKE_CAL, full_history=hist)
+    od = after["open_down"]
+    assert od["warn"] is True and od["p_down"] >= 0.3 and od["threshold"] == 0.3 and od["precision"] == 0.8
+    before = predict_for(mk(901, comp=40, ret=None), hist, good_ev(), names=["comp"],
+                         calibration=FAKE_CAL, full_history=hist)
+    assert before["open_down"] is None
+
+
+def test_close_probability_carries_warning_flag():
+    p = predict_for(mk(902, comp=30, ret=None), synthetic(), good_ev(), names=["comp"], calibration=FAKE_CAL)
+    assert p["prob"]["warn"] is True and p["prob"]["threshold"] == 0.3 and p["prob"]["precision"] == 0.6
+    q = predict_for(mk(903, comp=1200, ret=None), synthetic(), good_ev(), names=["comp"], calibration=FAKE_CAL)
+    assert q["prob"]["warn"] is False
+
+
+def test_prediction_with_fresh_calibration_is_json_serialisable():
+    import json
+    from dataclasses import asdict
+    from ipo.predict import calibrate
+    hist = retail_hist()
+    cal = calibrate(hist, hist, ["comp"])
+    p = predict_for(mk(904, comp=40, ret=None, retail_competition=4.0), hist, good_ev(), names=["comp"],
+                    calibration=cal, full_history=hist)
+    json.dumps(p)
+    json.dumps(cal)

@@ -29,3 +29,6 @@ SELECT_MIN_COVERAGE = 0.5
 SELECT_MAX_FEATURES = 8
 SELECT_MIN_GAIN = 0.003
 SELECT_CHUNK = 5
+
+WARN_RECALL = 0.7          # warning threshold must catch this share of declines on the validation window
+RECENT_FROM = "2023-05-01" # price models and the pre-subscription model learn from listings after this date

@@ -194,4 +194,5 @@ def parse_detail(html: str) -> dict:
         "par_value": _int(_label_value(soup, "액면가") or ""),
         "old_share_pct": _old_share(_label_value(soup, "상장공모")),
         "inst_count": _inst_count(soup),
+        "retail_competition": _num(_label_value(soup, "청약경쟁률") or ""),
     }

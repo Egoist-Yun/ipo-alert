@@ -62,3 +62,15 @@ test('staleHours counts whole hours since update', () => {
   assert.equal(staleHours('2026-11-17T08:00:00+09:00', Date.parse('2026-11-18T00:00:00+09:00')), 16);
   assert.equal(staleHours('garbage', Date.now()), null);
 });
+
+test('badgeInfo: model warning shows even when signals are few', () => {
+  const warn = { ...base, flag_count: 1, prediction: { prob: { warn: true } } };
+  assert.deepEqual(badgeInfo(warn), { text: '하락 경고', tone: 'risk' });
+  const openWarn = { ...base, prediction: { prob: { warn: false }, open_down: { warn: true } } };
+  assert.deepEqual(badgeInfo(openWarn), { text: '하락 경고', tone: 'risk' });
+});
+
+test('badgeInfo: after subscription the open-price judgment replaces the pre-subscription one', () => {
+  const calmAfter = { ...base, flag_count: 1, prediction: { prob: { warn: true }, open_down: { warn: false } } };
+  assert.deepEqual(badgeInfo(calmAfter), { text: '⚠ 1', tone: 'risk' });
+});

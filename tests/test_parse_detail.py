@@ -47,3 +47,8 @@ def test_detail_old_share_from_secondary_offering_text():
     html = ("<html><body><table><tr><td>상장공모</td><td>신주모집 : 800,000 주 (80%) / 구주매출 : 200,000 주 (20%)</td>"
             "</tr></table></body></html>")
     assert parse_detail(html)["old_share_pct"] == 20.0
+
+
+def test_detail_retail_competition_after_and_before_subscription():
+    assert parse_detail(load("detail_2336"))["retail_competition"] == 13.26
+    assert parse_detail(load("detail_2352"))["retail_competition"] is None

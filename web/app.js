@@ -135,9 +135,13 @@ function resultNodes(ipo) {
   return nodes;
 }
 
+function warnNote(w) {
+  return `경고 기준 ${(w.threshold * 100).toFixed(0)}% 이상. 과거 검증에서 하락의 ${(w.recall * 100).toFixed(0)}%를 미리 잡았고, 경고의 ${(w.precision * 100).toFixed(0)}%가 맞았어요.`;
+}
+
 function predictionNodes(ipo) {
   const p = ipo.prediction;
-  if (!p || (!p.knn && !p.open && !p.close && !p.prob)) {
+  if (!p || (!p.knn && !p.open && !p.close && !p.prob && !p.open_down)) {
     const why = p && p.accuracy
       ? '과거 기록으로 검증했을 때 기준보다 정확하지 않아서 보여주지 않아요.'
       : '비교할 과거 기록이 아직 부족해요.';
@@ -153,16 +157,23 @@ function predictionNodes(ipo) {
     for (const [key, label] of [['open', '시초가 예상'], ['close', '첫날 종가 예상']]) {
       const e = p[key];
       if (!e) continue;
-      nodes.push(kv(label, `${won(e.price)} (${pct(e.return)})`, e.return < 0 ? 'flag' : ''));
+      nodes.push(kv(label + (e.uses_retail ? ' (일반청약 경쟁률 반영)' : ''), `${won(e.price)} (${pct(e.return)})`, e.return < 0 ? 'flag' : ''));
       nodes.push(h('p', { class: 'note' }, `과거 검증: 평균 오차 ±${(e.mae * 100).toFixed(0)}%p, 공모가 위/아래 적중 ${(e.direction_acc * 100).toFixed(0)}%`));
     }
   }
+  if (p.open_down) {
+    const o = p.open_down;
+    nodes.push(h('h4', {}, '청약 후: 시초가가 공모가 아래일 확률'));
+    if (o.warn) nodes.push(h('p', { class: 'summary warn' }, '시초가 하락 경고'));
+    nodes.push(kv('일반청약 경쟁률 반영', `${(o.p_down * 100).toFixed(0)}%`, o.warn ? 'flag' : ''));
+    nodes.push(h('p', { class: 'note' }, warnNote(o)));
+  }
   if (p.prob) {
+    const q = p.prob;
     nodes.push(h('h4', {}, '공모가 아래로 끝날 확률'));
-    nodes.push(kv('첫날 종가 기준', `${(p.prob.p_down * 100).toFixed(0)}%`, p.prob.p_down >= 0.5 ? 'flag' : ''));
-    if (acc.prob && acc.prob_base) {
-      nodes.push(h('p', { class: 'note' }, `과거 검증: 하락 여부 적중 ${(acc.prob.accuracy * 100).toFixed(0)}% (과거 하락 비율만 보고 찍으면 ${(acc.prob_base.accuracy * 100).toFixed(0)}%)`));
-    }
+    if (q.warn) nodes.push(h('p', { class: 'summary warn' }, '하락 경고'));
+    nodes.push(kv('첫날 종가 기준', `${(q.p_down * 100).toFixed(0)}%`, q.warn ? 'flag' : ''));
+    if (q.threshold != null) nodes.push(h('p', { class: 'note' }, warnNote(q)));
   }
   if (p.knn) {
     const k = p.knn;

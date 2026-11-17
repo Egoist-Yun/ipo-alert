@@ -105,3 +105,49 @@ def test_format_shows_probability_and_conflict_line():
 def test_format_without_conflict_has_no_conflict_line():
     pred = {"knn": None, "model": None, "prob": {"p_down": 0.8, "n": 260}, "conflict": False, "accuracy": None}
     assert "엇갈려요" not in format_alert(replace(NEXI, prediction=pred), "https://s/")["message"]
+
+
+OPEN_DOWN = {"p_down": 0.62, "threshold": 0.3, "warn": True, "precision": 0.82, "recall": 0.75, "n": 880}
+LISTING_SOON = replace(NEXI, no=88, sub_start="2026-11-03", sub_end="2026-11-04", listing_date="2026-11-12",
+                       retail_competition=13.26,
+                       prediction={"knn": None, "close": None, "prob": None, "conflict": False, "accuracy": None,
+                                   "open": {"return": -0.11, "price": 7120, "mae": 0.37, "direction_acc": 0.9,
+                                            "uses_retail": True},
+                                   "open_down": OPEN_DOWN})
+
+
+def test_pre_listing_alert_after_subscription_once():
+    st = {"sent": ["result:88"]}
+    due = due_alerts([LISTING_SOON], st, kst(2026, 11, 6, 18))
+    assert [k for k, _ in due] == ["pre:88"]
+    mark_sent(st, due)
+    assert due_alerts([LISTING_SOON], st, kst(2026, 11, 7, 18)) == []
+
+
+def test_no_pre_listing_alert_once_listed_or_before_subscription():
+    st = {"sent": ["result:88"]}
+    assert due_alerts([replace(LISTING_SOON, first_close=4810)], st, kst(2026, 11, 6, 18)) == []
+    no_retail = replace(LISTING_SOON, prediction={**LISTING_SOON.prediction, "open_down": None})
+    assert [k for k, _ in due_alerts([no_retail], st, kst(2026, 11, 6, 18))] == []
+
+
+def test_pre_listing_alert_text():
+    from ipo.notify import format_pre_alert
+    p = format_pre_alert(LISTING_SOON, "https://s/")
+    assert p["title"] == "넥스아이 상장 전 · 시초가 하락 경고"
+    assert "시초가 하락 확률 62% (경고 기준 30%)" in p["message"]
+    assert "시초가 예상 7,120원 (-11%, ±37%p)" in p["message"]
+    assert "일반청약 경쟁률 13대 1" in p["message"]
+    assert "하락의 75%를 미리 잡았고, 경고의 82%가 맞았어요" in p["message"]
+    assert DISCLAIMER in p["message"] and p["click"] == "https://s/#88"
+    calm = replace(LISTING_SOON, prediction={**LISTING_SOON.prediction,
+                                             "open_down": {**OPEN_DOWN, "p_down": 0.1, "warn": False}})
+    assert format_pre_alert(calm, "https://s/")["title"] == "넥스아이 상장 전 · 시초가 예상"
+
+
+def test_close_warning_line_and_title():
+    pred = {"knn": None, "open": None, "close": None, "conflict": False, "accuracy": None,
+            "prob": {"p_down": 0.35, "n": 260, "threshold": 0.3, "warn": True, "precision": 0.59, "recall": 0.72}}
+    p = format_alert(replace(NEXI, prediction=pred), "https://s/")
+    assert p["title"] == "넥스아이 ⚠5개 · 하락 경고 · 청약 11/3~11/4"
+    assert "하락 경고: 공모가 아래로 끝날 확률 35% (경고 기준 30%)" in p["message"]

@@ -28,6 +28,7 @@ class Ipo:
     par_value: int | None = None
     old_share_pct: float | None = None
     inst_count: int | None = None
+    retail_competition: float | None = None
     open_price: int | None = None
     first_close: int | None = None
     signals: list[dict] = field(default_factory=list)
