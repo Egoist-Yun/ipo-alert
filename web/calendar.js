@@ -38,3 +38,18 @@ export function barsForMonth(ipos, year, month) {
 export function listForMonth(ipos, year, month) {
   return overlapping(ipos, year, month).sort((a, b) => a.sub_start.localeCompare(b.sub_start) || a.no - b.no);
 }
+
+export function badgeInfo(ipo) {
+  if (ipo.is_spac) return { text: '스팩', tone: 'spac' };
+  if (ipo.inst_competition == null) return { text: '대기 중', tone: 'wait' };
+  const flags = ipo.flag_count ?? 0;
+  const unknown = ipo.unknown_count ?? 0;
+  if (flags > 0) return { text: `⚠ ${flags}`, tone: 'risk' };
+  if (unknown >= 2) return { text: `확인 불가 ${unknown}`, tone: 'wait' };
+  return { text: unknown ? `신호 없음 · 확인 불가 ${unknown}` : '신호 없음', tone: '' };
+}
+
+export function staleHours(updatedAt, nowMs) {
+  const t = Date.parse(updatedAt);
+  return Number.isNaN(t) ? null : Math.floor((nowMs - t) / 3600000);
+}

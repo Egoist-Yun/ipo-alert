@@ -47,23 +47,39 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data
           git diff --cached --quiet || git commit -m "data: update $(date -u +%F-%H%M)"
-          git push
+          for i in 1 2 3; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push && break
+            sleep 5
+          done
 
       - name: Build site
+        if: ${{ !cancelled() }}
         run: |
           mkdir _site
           cp web/index.html web/style.css web/app.js web/calendar.js web/manifest.json web/icon.svg _site/
           if [ -f data/ipos.json ]; then cp data/ipos.json _site/ipos.json; fi
 
       - uses: actions/configure-pages@v5
+        if: ${{ !cancelled() }}
 
       - uses: actions/upload-pages-artifact@v3
+        if: ${{ !cancelled() }}
         with:
           path: _site
 
       - id: deploy
+        if: ${{ !cancelled() }}
         uses: actions/deploy-pages@v4
 
       - name: Fail the run if the update step failed
         if: steps.run.outcome == 'failure'
         run: exit 1
+
+      - name: Notify phone when the workflow itself failed
+        if: ${{ failure() && steps.run.outcome != 'failure' }}
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          if [ -n "$NTFY_TOPIC" ]; then
+            curl -s -H "Content-Type: application/json"               -d "{\"topic\":\"$NTFY_TOPIC\",\"title\":\"공모주 수집 실패\",\"message\":\"GitHub Actions update가 실패했어요. 데이터가 갱신되지 않았을 수 있어요.\"}"               https://ntfy.sh
+          fi

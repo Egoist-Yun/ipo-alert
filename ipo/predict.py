@@ -35,7 +35,8 @@ def _usable(history: list[Ipo]) -> list[Ipo]:
 
 
 def _moods(history: list[Ipo]) -> dict[int, float | None]:
-    return {h.no: (market_mood(history, h.listing_date) if h.listing_date else None) for h in history}
+    return {h.no: (market_mood(history, h.sub_start or h.listing_date) if (h.sub_start or h.listing_date) else None)
+            for h in history}
 
 
 def _row(ipo: Ipo, moods: dict) -> np.ndarray:
@@ -45,7 +46,7 @@ def _row(ipo: Ipo, moods: dict) -> np.ndarray:
 def _target_mood(target: Ipo, history: list[Ipo], moods: dict | None) -> float | None:
     if moods is not None and target.no in moods:
         return moods[target.no]
-    return market_mood(history, target.listing_date or target.sub_start or "9999-12-31")
+    return market_mood(history, target.sub_start or target.listing_date or "9999-12-31")
 
 
 def _stats(X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -125,7 +126,9 @@ def walk_forward(history: list[Ipo]) -> list[dict]:
     start = n - max(1, round(config.EVAL_TEST_RATIO * n))
     records = []
     for idx in range(start, n):
-        past, target = items[:idx], items[idx]
+        target = items[idx]
+        cutoff = target.sub_start or target.listing_date
+        past = [p for p in items[:idx] if p.listing_date < cutoff]
         if len(past) < config.MIN_TRAIN:
             continue
         base = float(np.median([first_day_return(p) for p in past]))

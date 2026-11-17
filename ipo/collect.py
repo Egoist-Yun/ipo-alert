@@ -4,7 +4,7 @@ from datetime import datetime
 from ipo import config
 from ipo.fetch import get_html
 from ipo.models import Ipo, first_day_return
-from ipo.parse import parse_demand, parse_detail, parse_listing, parse_schedule
+from ipo.parse import ParseError, parse_demand, parse_detail, parse_listing, parse_schedule
 
 _BIO = re.compile(r"의약|의학|생물|바이오")
 
@@ -41,6 +41,9 @@ def collect_current(fetch=get_html, cache: dict | None = None, today: str | None
         parse_demand(fetch(config.BASE_URL + "index.htm?o=r1")),
         parse_listing(fetch(config.BASE_URL + "index.htm?o=nw")),
     )
+    rated = [r for r in tables[1] if "스팩" not in r["name"]]
+    if rated and all(r["inst_competition"] is None for r in rated):
+        raise ParseError("demand table has no competition values (layout changed?)")
     by_no: dict[int, Ipo] = {}
     for rows in tables:
         for row in rows:

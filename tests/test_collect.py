@@ -66,3 +66,13 @@ def test_market_mood_ignores_spac_and_future():
     hist[0] = replace(hist[0], is_spac=True)
     assert market_mood(hist, "2026-11-01") is None
     assert market_mood(hist + [mk(99, -0.1, "2026-12-01")], "2026-11-01") is None
+
+
+def test_collect_raises_when_demand_columns_shifted():
+    from ipo.parse import ParseError
+    import pytest
+    row = ('<table><tr><td><a href="./?o=v&no=1">x</a></td><td>2026.10.22</td><td>1~2</td><td>8,000</td>'
+           '<td>40,000</td><td>n/a</td><td>0.06%</td><td>y</td></tr></table>')
+    pages = {**PAGES, "https://www.38.co.kr/html/fund/index.htm?o=r1": row}
+    with pytest.raises(ParseError):
+        collect_current(fetch=lambda u: pages.get(u, "<html></html>"), today="2026-11-17")

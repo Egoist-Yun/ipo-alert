@@ -1,4 +1,4 @@
-import { monthGrid, barsForMonth, listForMonth } from './calendar.js';
+import { monthGrid, barsForMonth, listForMonth, badgeInfo, staleHours } from './calendar.js';
 
 const $ = id => document.getElementById(id);
 const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null };
@@ -36,17 +36,8 @@ function valueText(sig) {
   return `${v}%`;
 }
 
-function tone(ipo) {
-  if (ipo.is_spac) return 'spac';
-  if (ipo.inst_competition == null) return 'wait';
-  return ipo.flag_count > 0 ? 'risk' : '';
-}
-
-function badgeText(ipo) {
-  if (ipo.is_spac) return '스팩';
-  if (ipo.inst_competition == null) return '대기 중';
-  return ipo.flag_count > 0 ? `⚠ ${ipo.flag_count}` : '신호 없음';
-}
+const tone = ipo => badgeInfo(ipo).tone;
+const badgeText = ipo => badgeInfo(ipo).text;
 
 function select(no) {
   state.selected = no;
@@ -149,7 +140,7 @@ function predictionNodes(ipo) {
   if (p.knn) {
     const k = p.knn;
     nodes.push(h('p', { class: 'p' }, `${k.n}개 중 ${k.down_count}개가 첫날 공모가 아래로 마감했어요.`));
-    nodes.push(kv('첫날 종가 예상 범위', `${won(k.price_low)} ~ ${won(k.price_high)}`));
+    nodes.push(kv('비슷한 종목의 가운데 절반 범위', `${won(k.price_low)} ~ ${won(k.price_high)}`));
     nodes.push(kv('가운데 값', pct(k.median)));
     for (const it of k.items) nodes.push(kv(it.name, pct(it.return)));
     if (acc.knn) nodes.push(h('p', { class: 'note' }, `과거 검증: 공모가 위/아래 적중 ${(acc.knn.direction_acc * 100).toFixed(0)}%, 평균 오차 ±${(acc.knn.mae * 100).toFixed(0)}%p`));
@@ -190,6 +181,8 @@ async function init() {
     const t = new Date(data.updated_at);
     $('updated').textContent = Number.isNaN(t.getTime()) ? '' : `마지막 갱신 ${t.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
     $('disclaimer').textContent = data.disclaimer || '';
+    const hrs = staleHours(data.updated_at, Date.now());
+    if (hrs != null && hrs >= 14) $('stale').textContent = `데이터가 ${hrs}시간 전 기준이에요. 최신이 아닐 수 있어요.`;
   } catch (e) {
     $('weeks').replaceChildren(h('p', { class: 'msg' }, '데이터를 불러오지 못했어요. 잠시 뒤 다시 열어주세요.'));
     return;

@@ -37,3 +37,28 @@ test('listForMonth sorted by start date', () => {
   const b = { ...A, no: 5, name: 'B', sub_start: '2026-11-02', sub_end: '2026-11-03' };
   assert.deepEqual(listForMonth([A, b], 2026, 11).map(i => i.name), ['B', 'A']);
 });
+
+import { badgeInfo, staleHours } from './calendar.js';
+
+const base = { is_spac: false, inst_competition: 800, flag_count: 0, unknown_count: 0 };
+
+test('badgeInfo: no flags, nothing unknown', () => {
+  assert.deepEqual(badgeInfo(base), { text: '신호 없음', tone: '' });
+});
+test('badgeInfo: one unknown is stated next to "no signal"', () => {
+  assert.deepEqual(badgeInfo({ ...base, unknown_count: 1 }), { text: '신호 없음 · 확인 불가 1', tone: '' });
+});
+test('badgeInfo: mostly unknown is grey, never "no signal"', () => {
+  assert.deepEqual(badgeInfo({ ...base, unknown_count: 4 }), { text: '확인 불가 4', tone: 'wait' });
+});
+test('badgeInfo: flags win', () => {
+  assert.deepEqual(badgeInfo({ ...base, flag_count: 3, unknown_count: 1 }), { text: '⚠ 3', tone: 'risk' });
+});
+test('badgeInfo: waiting and spac', () => {
+  assert.deepEqual(badgeInfo({ ...base, inst_competition: null }), { text: '대기 중', tone: 'wait' });
+  assert.deepEqual(badgeInfo({ ...base, is_spac: true }), { text: '스팩', tone: 'spac' });
+});
+test('staleHours counts whole hours since update', () => {
+  assert.equal(staleHours('2026-11-17T08:00:00+09:00', Date.parse('2026-11-18T00:00:00+09:00')), 16);
+  assert.equal(staleHours('garbage', Date.now()), null);
+});

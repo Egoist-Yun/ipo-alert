@@ -53,3 +53,10 @@ def test_empty_table_raises():
     for fn in (parse_schedule, parse_demand, parse_listing):
         with pytest.raises(ParseError):
             fn("<html><body><table></table></body></html>")
+
+
+def test_short_row_is_a_parse_error_not_index_error():
+    short = '<table><tr><td><a href="./?o=v&no=1">x</a></td><td>2026.10.22</td><td>1</td></tr></table>'
+    for fn in (parse_schedule, parse_demand, parse_listing):
+        with pytest.raises(ParseError):
+            fn(short)

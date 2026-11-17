@@ -64,8 +64,9 @@ def format_alert(ipo: Ipo, site_url: str) -> dict:
     if ipo.unknown_count:
         lines.append(f"확인 불가 {ipo.unknown_count}개")
     lines.append(DISCLAIMER)
+    unknown = f" · 확인 불가 {ipo.unknown_count}개" if ipo.flag_count == 0 and ipo.unknown_count else ""
     return {
-        "title": f"{ipo.name} ⚠{ipo.flag_count}개 · 청약 {span}",
+        "title": f"{ipo.name} ⚠{ipo.flag_count}개{unknown} · 청약 {span}",
         "message": "\n".join(lines),
         "click": f"{site_url.rstrip('/')}/#{ipo.no}",
     }

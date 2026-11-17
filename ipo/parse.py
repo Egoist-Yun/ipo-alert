@@ -35,14 +35,14 @@ def _no(tr) -> int | None:
     return None
 
 
-def _rows(html: str, date_col: int, date_re: str) -> list[list]:
+def _rows(html: str, date_col: int, date_re: str, min_cols: int) -> list[list]:
     soup = BeautifulSoup(html, "html.parser")
     out = []
     for tr in soup.find_all("tr"):
         if tr.find("table"):
             continue
         tds = tr.find_all("td")
-        if len(tds) <= date_col or _no(tr) is None:
+        if len(tds) < min_cols or _no(tr) is None:
             continue
         if not re.search(date_re, _text(tds[date_col])):
             continue
@@ -68,7 +68,7 @@ def _range(text: str) -> tuple[str | None, str | None]:
 
 def parse_schedule(html: str) -> list[dict]:
     result = []
-    for tr, tds in _rows(html, 1, r"\d{4}\.\d{2}\.\d{2}\s*~"):
+    for tr, tds in _rows(html, 1, r"\d{4}\.\d{2}\.\d{2}\s*~", 6):
         start, end = _range(_text(tds[1]))
         band = re.findall(r"\d[\d,]*", _text(tds[3]))
         result.append({
@@ -86,7 +86,7 @@ def parse_schedule(html: str) -> list[dict]:
 
 def parse_demand(html: str) -> list[dict]:
     result = []
-    for tr, tds in _rows(html, 1, r"\d{4}\.\d{2}\.\d{2}"):
+    for tr, tds in _rows(html, 1, r"\d{4}\.\d{2}\.\d{2}", 6):
         lock = _text(tds[6]) if len(tds) > 6 else ""
         result.append({
             "no": _no(tr),
@@ -101,7 +101,7 @@ def parse_demand(html: str) -> list[dict]:
 
 def parse_listing(html: str) -> list[dict]:
     result = []
-    for tr, tds in _rows(html, 1, r"\d{4}/\d{2}/\d{2}"):
+    for tr, tds in _rows(html, 1, r"\d{4}/\d{2}/\d{2}", 9):
         result.append({
             "no": _no(tr),
             "name": _text(tds[0]),

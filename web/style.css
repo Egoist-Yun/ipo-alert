@@ -34,6 +34,9 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .title { color: var(--foreground); font-size: 1.5rem; font-weight: 600; line-height: 1.5; }
 .sub { color: var(--muted); font-size: 0.875rem; line-height: 1.5; }
 
+.stale { margin-bottom: var(--space-lg); color: var(--danger); font-size: 0.875rem; font-weight: 600; line-height: 1.5; }
+.stale:empty { display: none; }
+
 .cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-lg); }
 .month { color: var(--foreground); font-size: 1.375rem; font-weight: 600; line-height: 1.5; }
 .btn-small { height: 32px; min-width: 44px; padding: 0 var(--space-lg); border-radius: 8px; background: var(--weak-bg); color: var(--weak-fg); font-size: 0.9375rem; font-weight: 600; }

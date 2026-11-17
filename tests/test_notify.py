@@ -87,3 +87,8 @@ def test_state_roundtrip_and_missing_file(tmp_path):
     assert load_state(tmp_path / "none.json") == {"sent": []}
     save_state(tmp_path / "s.json", {"sent": ["a"]})
     assert load_state(tmp_path / "s.json") == {"sent": ["a"]}
+
+
+def test_title_with_zero_flags_but_unknowns_does_not_look_safe():
+    p = format_alert(replace(NEXI, flag_count=0, unknown_count=4), "https://s/")
+    assert p["title"] == "넥스아이 ⚠0개 · 확인 불가 4개 · 청약 11/3~11/4"

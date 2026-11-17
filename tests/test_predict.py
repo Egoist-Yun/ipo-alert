@@ -102,3 +102,23 @@ def test_predict_for_none_for_spac_or_missing_inputs():
     assert predict_for(replace(mk(1), is_spac=True), hist60(), ev) is None
     assert predict_for(replace(mk(1), final_price=None), hist60(), ev) is None
     assert predict_for(replace(mk(1), inst_competition=None), hist60(), ev) is None
+
+
+def test_walk_forward_excludes_same_day_listings():
+    import statistics
+    from ipo.models import first_day_return
+    items = [mk(i, ret=((i * 37) % 100) / 100 - 0.4, day=i) for i in range(38)]
+    items += [mk(38, ret=0.9, day=38), mk(39, ret=-0.35, day=38)]
+    last = next(r for r in walk_forward(items) if r["no"] == 39)
+    expected = statistics.median(first_day_return(i) for i in items[:38])
+    assert last["baseline"] == pytest.approx(expected)
+
+
+def test_walk_forward_cuts_training_at_subscription_start():
+    import statistics
+    from ipo.models import first_day_return
+    items = [mk(i, ret=((i * 37) % 100) / 100 - 0.4, day=i) for i in range(40)]
+    items[39] = replace(items[39], sub_start=(date(2025, 1, 1) + timedelta(days=36)).isoformat())
+    last = next(r for r in walk_forward(items) if r["no"] == 39)
+    expected = statistics.median(first_day_return(i) for i in items[:36])
+    assert last["baseline"] == pytest.approx(expected)
