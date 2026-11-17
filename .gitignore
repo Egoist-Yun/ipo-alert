@@ -1,0 +1,6 @@
+__pycache__/
+.venv/
+.superpowers/
+web/ipos.json
+*.pyc
+.pytest_cache/
