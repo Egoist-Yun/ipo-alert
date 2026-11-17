@@ -111,3 +111,65 @@ def parse_listing(html: str) -> list[dict]:
             "first_close": _int(_text(tds[8])),
         })
     return result
+
+
+def _label_value(soup, label: str) -> str | None:
+    for cell in soup.find_all(["td", "th"]):
+        if cell.find("table"):
+            continue
+        if _text(cell).replace(" ", "") == label:
+            sib = cell.find_next_sibling(["td", "th"])
+            if sib is not None:
+                return _text(sib)
+    return None
+
+
+def _full_range(text: str | None) -> tuple[str | None, str | None]:
+    found = re.findall(r"\d{4}\.\d{2}\.\d{2}", text or "")
+    if len(found) >= 2:
+        return _date(found[0]), _date(found[1])
+    return None, None
+
+
+def _last_pct(cells: list[str]) -> float | None:
+    for c in reversed(cells):
+        if "%" in c and _num(c) is not None:
+            return _num(c)
+    return None
+
+
+def parse_detail(html: str) -> dict:
+    soup = BeautifulSoup(html, "html.parser")
+    band = re.findall(r"\d[\d,]*", _label_value(soup, "희망공모가액") or "")
+    sub_start, sub_end = _full_range(_label_value(soup, "공모청약일"))
+    lock = _label_value(soup, "의무보유확약") or ""
+
+    below_band = None
+    float_pct = None
+    for table in soup.find_all("table"):
+        if table.find("table"):
+            continue
+        for tr in table.find_all("tr"):
+            cells = [_text(c) for c in tr.find_all(["td", "th"])]
+            if not cells:
+                continue
+            if below_band is None and re.search(r"\(하단\)\s*미만", cells[0]):
+                below_band = _last_pct(cells)
+            if float_pct is None and cells[0] == "합계" and "유통가능" in _text(table):
+                float_pct = _last_pct(cells)
+
+    return {
+        "market": _label_value(soup, "시장구분"),
+        "industry": _label_value(soup, "업종"),
+        "band_low": int(band[0].replace(",", "")) if len(band) >= 1 else None,
+        "band_high": int(band[1].replace(",", "")) if len(band) >= 2 else None,
+        "final_price": _int(_label_value(soup, "확정공모가") or ""),
+        "offer_amount_mil": _int(_label_value(soup, "공모금액") or ""),
+        "sub_start": sub_start,
+        "sub_end": sub_end,
+        "listing_date": _date(_label_value(soup, "신규상장일") or ""),
+        "inst_competition": _num(_label_value(soup, "기관경쟁률") or ""),
+        "lockup_pct": _num(lock) if "%" in lock else None,
+        "below_band_pct": below_band,
+        "float_pct": float_pct,
+    }
