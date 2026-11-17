@@ -21,6 +21,17 @@ def detail_url(no: int) -> str:
     return f"{config.BASE_URL}?o=v&no={no}"
 
 
+def apply_detail(ipo: Ipo, detail: dict) -> None:
+    ipo.market = detail["market"]
+    ipo.industry = detail["industry"]
+    ipo.below_band_pct = detail["below_band_pct"]
+    ipo.float_pct = detail["float_pct"]
+    _fill(ipo, **{k: detail[k] for k in (
+        "band_low", "band_high", "final_price", "offer_amount_mil", "sub_start", "sub_end",
+        "listing_date", "inst_competition", "lockup_pct")})
+    ipo.is_bio = bool(ipo.industry and _BIO.search(ipo.industry))
+
+
 def collect_current(fetch=get_html, cache: dict | None = None, today: str | None = None) -> list[Ipo]:
     today = today or datetime.now(config.KST).date().isoformat()
     cache = {} if cache is None else cache
@@ -51,14 +62,7 @@ def collect_current(fetch=get_html, cache: dict | None = None, today: str | None
             detail = parse_detail(fetch(detail_url(ipo.no)))
             if ipo.inst_competition is not None:
                 cache[ipo.no] = detail
-        ipo.market = detail["market"]
-        ipo.industry = detail["industry"]
-        ipo.below_band_pct = detail["below_band_pct"]
-        ipo.float_pct = detail["float_pct"]
-        _fill(ipo, **{k: detail[k] for k in (
-            "band_low", "band_high", "final_price", "offer_amount_mil", "sub_start", "sub_end",
-            "listing_date", "inst_competition", "lockup_pct")})
-        ipo.is_bio = bool(ipo.industry and _BIO.search(ipo.industry))
+        apply_detail(ipo, detail)
     return list(by_no.values())
 
 
