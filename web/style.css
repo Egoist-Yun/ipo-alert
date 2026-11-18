@@ -72,6 +72,9 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .badge.wait { background: var(--surface); color: var(--body); }
 
 .detail { margin-top: var(--space-lg); }
+.title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-lg); }
+.title-row h3 { min-width: 0; }
+.title-row .btn-small { flex: none; }
 .detail:empty { display: none; }
 .record { margin-top: var(--space-lg); }
 .record-link { margin-top: var(--space-xl); }

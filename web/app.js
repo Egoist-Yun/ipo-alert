@@ -135,7 +135,7 @@ function appliedNodes(ipo) {
   if (!state.canApply) return [];
   const on = state.applied.has(ipo.no);
   return [h('button', {
-    class: 'btn-medium', type: 'button', 'aria-pressed': on ? 'true' : 'false',
+    class: 'btn-small', type: 'button', 'aria-pressed': on ? 'true' : 'false',
     onclick: () => {
       state.applied = toggleApplied(state.applied, ipo.no);
       saveApplied(localStore(), state.applied);
@@ -182,14 +182,13 @@ function renderDetail() {
   const ipo = state.ipos.find(i => i.no === state.selected);
   if (!ipo) { box.replaceChildren(); return; }
 
-  const nodes = [h('h3', {}, ipo.name)];
+  const nodes = [h('div', { class: 'title-row' }, h('h3', {}, ipo.name), ...appliedNodes(ipo))];
   const chips = [ipo.market, ...(ipo.underwriters || [])].filter(Boolean);
   nodes.push(h('div', { class: 'chips' }, chips.map(c => h('span', { class: 'badge' }, c))));
   nodes.push(...verdictNodes(ipo));
   nodes.push(kv('청약', `${md(ipo.sub_start)}~${md(ipo.sub_end)}`));
   nodes.push(...brokerNodes(ipo));
   if (ipo.listing_date) nodes.push(kv('상장', md(ipo.listing_date)));
-  nodes.push(...appliedNodes(ipo));
 
   if (!ipo.is_spac && ipo.inst_competition != null) {
     const unknown = ipo.unknown_count ? ` · 확인 불가 ${ipo.unknown_count}개` : '';
