@@ -307,3 +307,33 @@ def test_calibrate_reports_strong_warning_stats():
     for key in ("close", "open"):
         st = cal[key]["strong_test"]
         assert 0 <= st["recall"] <= 1 and 0 <= st["precision"] <= 1 and st["warned"] <= cal[key]["test"]["warned"]
+
+
+def test_calibrate_counts_warnings_and_reports_price_intervals():
+    from ipo.predict import calibrate
+    hist = retail_hist()
+    cal = calibrate(hist, hist, ["comp"])
+    for key in ("close", "open"):
+        st = cal[key]["test"]
+        assert 0 <= st["caught"] <= st["warned"] and st["caught"] <= st["n_down"]
+    for key in ("close", "open_pre", "open_post"):
+        iv = cal["interval"][key]
+        assert iv["q10"] < iv["q90"] and 0 <= iv["test_coverage"] <= 1 and iv["n"] >= 10
+
+
+COUNT_CAL = {"close": {"threshold": 0.3, "test": {"precision": 0.6, "recall": 0.7, "caught": 7, "warned": 12, "n_down": 10}},
+             "open": {"threshold": 0.3, "test": {"precision": 0.8, "recall": 0.7, "caught": 8, "warned": 10, "n_down": 11}},
+             "interval": {"close": {"q10": -0.2, "q90": 0.3, "test_coverage": 0.7, "n": 100},
+                          "open_pre": {"q10": -0.2, "q90": 0.3, "test_coverage": 0.7, "n": 100},
+                          "open_post": {"q10": -0.1, "q90": 0.2, "test_coverage": 0.75, "n": 100}}}
+
+
+def test_prediction_carries_warning_counts_and_price_range():
+    hist = retail_hist()
+    p = predict_for(mk(905, comp=30, ret=None), synthetic(), good_ev(), names=["comp"], calibration=COUNT_CAL)
+    assert (p["prob"]["caught"], p["prob"]["warned"], p["prob"]["n_down"]) == (7, 12, 10)
+    c = p["close"]
+    assert c["price_low"] < c["price"] < c["price_high"] and c["range_coverage"] == 0.7
+    after = predict_for(mk(906, comp=40, ret=None, retail_competition=4.0), hist, good_ev(), names=["comp"],
+                        calibration=COUNT_CAL, full_history=hist)
+    assert (after["open_down"]["caught"], after["open_down"]["warned"], after["open_down"]["n_down"]) == (8, 10, 11)

@@ -112,3 +112,14 @@ test('needsRefresh: unknown load time or a clock that went backwards never loops
   assert.equal(needsRefresh(undefined, now), false);
   assert.equal(needsRefresh(now + 5000, now), false);
 });
+
+import { warnText } from './calendar.js';
+
+test('warnText states counts when known, percentages for older data', () => {
+  assert.equal(warnText({ caught: 10, warned: 16, n_down: 12, precision: 0.62, recall: 0.83 }, false),
+    '경고 16개 중 10개 적중 · 하락 12개 중 10개 포착');
+  assert.equal(warnText({ strong_caught: 7, strong_warned: 9, caught: 10, n_down: 12 }, true),
+    '경고 9개 중 7개 적중 · 하락 12개 중 7개 포착');
+  assert.equal(warnText({ precision: 0.62, recall: 0.83 }, false), '적중 62% · 하락의 83% 포착');
+  assert.equal(warnText({}, false), null);
+});

@@ -100,3 +100,18 @@ def test_every_stock_has_a_warning_level_field(tmp_path):
     run(tmp_path, None, "", NOW, fetch=fake_fetch, post=Rec())
     data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
     assert all(i["warning"] in (None, "warn", "strong") for i in data["ipos"])
+
+
+def test_model_config_recomputes_a_cache_saved_before_counts_and_intervals(tmp_path, monkeypatch):
+    import json
+    from ipo import main
+    old = {"names": ["comp"], "n": 100, "calibration": {"close": {"threshold": 0.3, "test": {}}}}
+    (tmp_path / "model.json").write_text(json.dumps(old), encoding="utf-8")
+    fresh = {"close": {"threshold": 0.35, "test": {"caught": 1}}, "interval": {"close": {}}}
+    monkeypatch.setattr(main, "_usable", lambda h: list(range(100)))
+    monkeypatch.setattr(main, "select_features", lambda recent: ["comp"])
+    monkeypatch.setattr(main, "calibrate", lambda full, recent, names: fresh)
+    names, cal = main._model_config(tmp_path, [], [])
+    assert cal == fresh
+    names, cal = main._model_config(tmp_path, [], [])  # now cached and complete
+    assert cal == fresh

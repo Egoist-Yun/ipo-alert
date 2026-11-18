@@ -394,24 +394,31 @@ def predict_for(ipo: Ipo, history: list[Ipo], eval_result: dict | None,
 
     enough = len(pool) >= config.MIN_TRAIN
 
-    def priced(key: str, base: str, yfun, ev: dict | None, cols: list[str]) -> dict | None:
+    def priced(key: str, base: str, yfun, ev: dict | None, cols: list[str], ikey: str) -> dict | None:
         if not (enough and _beats_baseline(ev, key, base)):
             return None
         e = _ensemble(ipo, pool, ctxs, cols, yfun)
         if e is None:
             return None
-        return {"return": e["ens"], "price": int(round(ipo.final_price * (1 + e["ens"]))),
-                "mae": ev[key]["mae"], "direction_acc": ev[key]["direction_acc"]}
+        res = {"return": e["ens"], "price": int(round(ipo.final_price * (1 + e["ens"]))),
+               "mae": ev[key]["mae"], "direction_acc": ev[key]["direction_acc"]}
+        iv = ((calibration or {}).get("interval") or {}).get(ikey)
+        if iv:
+            mid = _log1p(e["ens"])
+            res.update(price_low=int(round(ipo.final_price * math.exp(mid + iv["q10"]))),
+                       price_high=int(round(ipo.final_price * math.exp(mid + iv["q90"]))),
+                       range_coverage=iv["test_coverage"])
+        return res
 
     subscribed = ipo.retail_competition is not None
-    close = priced("ens", "baseline", first_day_return, eval_result, names)
+    close = priced("ens", "baseline", first_day_return, eval_result, names, "close")
     opened = None
     if subscribed and post_eval:
-        opened = priced("open_ens", "open_baseline", open_return, post_eval, names + ["retail"])
+        opened = priced("open_ens", "open_baseline", open_return, post_eval, names + ["retail"], "open_post")
         if opened:
             opened["uses_retail"] = True
     if opened is None:
-        opened = priced("open_ens", "open_baseline", open_return, eval_result, names)
+        opened = priced("open_ens", "open_baseline", open_return, eval_result, names, "open_pre")
 
     prob = None
     if enough and _prob_beats_base(eval_result):
@@ -420,8 +427,12 @@ def predict_for(ipo: Ipo, history: list[Ipo], eval_result: dict | None,
             c = calibration["close"]
             prob.update(threshold=c["threshold"], warn=bool(prob["p_down"] >= c["threshold"]),
                         precision=c["test"]["precision"], recall=c["test"]["recall"],
+                        caught=c["test"].get("caught"), warned=c["test"].get("warned"),
+                        n_down=c["test"].get("n_down"),
                         strong_precision=c.get("strong_test", {}).get("precision"),
-                        strong_recall=c.get("strong_test", {}).get("recall"))
+                        strong_recall=c.get("strong_test", {}).get("recall"),
+                        strong_caught=c.get("strong_test", {}).get("caught"),
+                        strong_warned=c.get("strong_test", {}).get("warned"))
 
     open_down = None
     if subscribed and calibration and full_history:
@@ -432,8 +443,12 @@ def predict_for(ipo: Ipo, history: list[Ipo], eval_result: dict | None,
         c = calibration["open"]
         open_down = {"p_down": p, "threshold": c["threshold"], "warn": bool(p >= c["threshold"]),
                      "precision": c["test"]["precision"], "recall": c["test"]["recall"], "n": len(fh),
+                     "caught": c["test"].get("caught"), "warned": c["test"].get("warned"),
+                     "n_down": c["test"].get("n_down"),
                      "strong_precision": c.get("strong_test", {}).get("precision"),
-                     "strong_recall": c.get("strong_test", {}).get("recall")}
+                     "strong_recall": c.get("strong_test", {}).get("recall"),
+                     "strong_caught": c.get("strong_test", {}).get("caught"),
+                     "strong_warned": c.get("strong_test", {}).get("warned")}
     upbeat = ((knn is not None and knn["median"] > 0) or (close is not None and close["return"] > 0)
               or (prob is not None and prob["p_down"] < 0.5))
     conflict = ipo.flag_count >= config.CONFLICT_FLAGS and upbeat
@@ -478,7 +493,7 @@ def _warn_stats(pairs: list[tuple], th: float, agree=None) -> dict:
     warned = [y for p, y, t in pairs if p >= th and (agree is None or agree(t))]
     return {"recall": (sum(warned) / pos) if pos else 0.0,
             "precision": (sum(warned) / len(warned)) if warned else 0.0,
-            "warned": len(warned), "n_down": pos, "n": len(pairs)}
+            "caught": int(sum(warned)), "warned": len(warned), "n_down": pos, "n": len(pairs)}
 
 
 def _agree_close(t: Ipo) -> bool:
@@ -487,6 +502,24 @@ def _agree_close(t: Ipo) -> bool:
 
 def _agree_open(t: Ipo) -> bool:
     return any(p.key == "retail_lock" and p.test(t) is True for p in PATTERNS)
+
+
+def _log1p(x: float) -> float:
+    return math.log1p(max(x, -0.95))
+
+
+def _log_residuals(window: list[Ipo], train: list[Ipo], ctxs: dict, names: list[str], yfun) -> list[float]:
+    """log(1+actual) - log(1+ensemble prediction), each made only from listings before the target."""
+    out = []
+    for t in window:
+        y = yfun(t)
+        if y is None:
+            continue
+        cutoff = t.sub_start or t.listing_date
+        e = _ensemble(t, [p for p in train if p.listing_date < cutoff], ctxs, names, yfun)
+        if e:
+            out.append(_log1p(y) - _log1p(e["ens"]))
+    return out
 
 
 def calibrate(full_history: list[Ipo], recent: list[Ipo], names: list[str]) -> dict:
@@ -505,6 +538,20 @@ def calibrate(full_history: list[Ipo], recent: list[Ipo], names: list[str]) -> d
         agree = _agree_close if key == "close" else _agree_open
         out[key] = {"threshold": th, "validation": _warn_stats(v, th), "test": _warn_stats(te, th),
                     "strong_validation": _warn_stats(v, th, agree), "strong_test": _warn_stats(te, th, agree)}
+    recent_items = _sorted_items(recent)
+    intervals = {}
+    for key, train, cols, yfun in (("close", recent_items, names, first_day_return),
+                                   ("open_pre", recent_items, names, open_return),
+                                   ("open_post", full, names + ["retail"], open_return)):
+        rv = _log_residuals(val, train, ctxs, cols, yfun)
+        rt = _log_residuals(test, train, ctxs, cols, yfun)
+        if not rv or len(rv) + len(rt) < 10:
+            continue
+        lo, hi = np.quantile(rv, [0.1, 0.9])  # measured on the test window with validation-only quantiles
+        cover = float(np.mean([lo <= r <= hi for r in rt])) if rt else 0.0
+        q10, q90 = np.quantile(rv + rt, [0.1, 0.9])  # shown to the user: all residuals
+        intervals[key] = {"q10": float(q10), "q90": float(q90), "test_coverage": cover, "n": len(rv) + len(rt)}
+    out["interval"] = intervals
     return out
 
 

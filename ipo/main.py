@@ -29,7 +29,8 @@ def _model_config(data_dir: Path, recent: list, full: list) -> tuple[list[str], 
     usable = len(_usable(recent))
     path = data_dir / "model.json"
     saved = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    if saved.get("names") and saved.get("calibration") and usable - saved.get("n", 0) < RESELECT_EVERY:
+    complete = "interval" in (saved.get("calibration") or {})  # caches from before counts/intervals are rebuilt
+    if saved.get("names") and saved.get("calibration") and complete and usable - saved.get("n", 0) < RESELECT_EVERY:
         return saved["names"], saved["calibration"]
     names = select_features(recent)
     if not names:

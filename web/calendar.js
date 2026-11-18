@@ -85,3 +85,15 @@ export function needsRefresh(loadedAtMs, nowMs, afterMs = REFRESH_AFTER_MS) {
   if (typeof loadedAtMs !== 'number' || nowMs < loadedAtMs) return false;
   return nowMs - loadedAtMs >= afterMs;
 }
+
+// "경고 16개 중 10개 적중 · 하락 12개 중 10개 포착": the validation counts behind a warning (percentages for older data).
+export function warnText(w, strong) {
+  const caught = strong ? w.strong_caught : w.caught;
+  const warned = strong ? w.strong_warned : w.warned;
+  if (caught != null && warned != null && w.n_down != null) {
+    return `경고 ${warned}개 중 ${caught}개 적중 · 하락 ${w.n_down}개 중 ${caught}개 포착`;
+  }
+  const sp = strong ? w.strong_precision : w.precision;
+  const sr = strong ? w.strong_recall : w.recall;
+  return sp != null && sr != null ? `적중 ${(sp * 100).toFixed(0)}% · 하락의 ${(sr * 100).toFixed(0)}% 포착` : null;
+}

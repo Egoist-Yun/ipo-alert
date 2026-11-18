@@ -1,4 +1,4 @@
-import { monthGrid, barsForMonth, listForMonth, badgeInfo, staleHours, listTitle, readOpen, saveOpen, needsRefresh } from './calendar.js';
+import { monthGrid, barsForMonth, listForMonth, badgeInfo, staleHours, listTitle, readOpen, saveOpen, needsRefresh, warnText } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
@@ -207,9 +207,9 @@ function predictionNodes(ipo) {
     const w = p.open_down || p.prob || {};
     const strong = ipo.warning === 'strong';
     nodes.push(h('p', { class: 'summary warn' }, strong ? '강한 하락 경고' : '하락 경고'));
-    const sp = strong ? w.strong_precision : w.precision;
-    const sr = strong ? w.strong_recall : w.recall;
-    if (sp != null) nodes.push(kv('과거 경고 적중', `${(sp * 100).toFixed(0)}% · 하락의 ${(sr * 100).toFixed(0)}% 포착`));
+    const wt = warnText(w, strong);
+    if (wt) nodes.push(kv('과거 검증', wt));
+    nodes.push(h('p', { class: 'p' }, '경고는 손실을 피하기 위한 용도예요. 건너뛴다고 평균 수익이 오르는 건 아니에요.'));
   }
   if (p.conflict) {
     nodes.push(h('p', { class: 'summary' }, ipo.warning ? '가격 예측은 상승이지만, 하락을 미리 잡는 데는 과거에 경고가 가격 예측보다 정확했어요.' : '신호와 예측이 엇갈려요. 두 가지를 함께 보세요.'));
@@ -220,11 +220,12 @@ function predictionNodes(ipo) {
       const e = p[key];
       if (!e) continue;
       nodes.push(kv(`${label}${e.uses_retail ? ' · 일반청약 반영' : ''} (±${(e.mae * 100).toFixed(0)}%p)`, `${won(e.price)} (${pct(e.return)})`, e.return < 0 ? 'flag' : ''));
+      if (e.price_low != null) nodes.push(kv(`범위 · 과거 ${(e.range_coverage * 100).toFixed(0)}% 적중`, `${won(e.price_low)} ~ ${won(e.price_high)}`));
     }
   }
   if (p.open_down) {
     const o = p.open_down;
-    nodes.push(h('h4', {}, '청약 후: 시초가가 공모가 아래일 확률'));
+    nodes.push(h('h4', {}, '청약 마감 후 참고: 시초가가 공모가 아래일 확률'));
     nodes.push(kv('일반청약 경쟁률 반영', `${(o.p_down * 100).toFixed(0)}%`, o.warn ? 'flag' : ''));
   }
   if (p.prob) {
