@@ -2,9 +2,15 @@ name: update
 
 on:
   schedule:
-    - cron: "0 23 * * *"   # 08:00 KST
-    - cron: "0 9 * * *"    # 18:00 KST
+    # Off the hour: GitHub delays top-of-hour schedules the most (an 08:00 run started at 12:58).
+    - cron: "17 23 * * *"  # 08:17 KST
+    - cron: "47 8 * * *"   # 17:47 KST
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "data/**"
+      - "docs/**"
 
 concurrency:
   group: ipo-update
