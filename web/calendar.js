@@ -58,3 +58,23 @@ export function staleHours(updatedAt, nowMs) {
   const t = Date.parse(updatedAt);
   return Number.isNaN(t) ? null : Math.floor((nowMs - t) / 3600000);
 }
+
+export function listTitle(year, month, count) {
+  return `${month}월 청약 목록 · ${count ? `${count}개` : '없음'}`;
+}
+
+const OPEN_KEY = 'ipo.listOpen';
+
+export function readOpen(storage) {
+  try {
+    return storage?.getItem(OPEN_KEY) !== '0';
+  } catch (e) {
+    return true;
+  }
+}
+
+export function saveOpen(storage, open) {
+  try {
+    storage?.setItem(OPEN_KEY, open ? '1' : '0');
+  } catch (e) { /* storage can be blocked; the list still opens and closes */ }
+}

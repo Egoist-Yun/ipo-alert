@@ -1,4 +1,4 @@
-import { monthGrid, barsForMonth, listForMonth, badgeInfo, staleHours } from './calendar.js';
+import { monthGrid, barsForMonth, listForMonth, badgeInfo, staleHours, listTitle, readOpen, saveOpen } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
@@ -84,16 +84,25 @@ function renderCalendar() {
   }
 }
 
+function localStore() {
+  try { return window.localStorage; } catch (e) { return undefined; }
+}
+
 function renderList() {
   const items = listForMonth(state.ipos, state.year, state.month);
-  $('list').replaceChildren(...items.map(ipo => {
+  const rows = items.map(ipo => {
     const cls = tone(ipo);
     return h('button', { class: 'row', type: 'button', onclick: () => select(ipo.no) },
       h('span', {},
         h('span', { class: 'name' }, ipo.name),
         h('span', { class: 'meta' }, `청약 ${md(ipo.sub_start)}~${md(ipo.sub_end)}`)),
       h('span', { class: `badge ${cls}` }, badgeText(ipo)));
-  }));
+  });
+  const box = h('details', { class: 'drop', open: readOpen(localStore()) },
+    h('summary', {}, h('span', {}, listTitle(state.year, state.month, items.length))),
+    rows);
+  box.addEventListener('toggle', () => saveOpen(localStore(), box.open));
+  $('list').replaceChildren(box);
 }
 
 function brokerNodes(ipo) {

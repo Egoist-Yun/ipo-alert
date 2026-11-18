@@ -53,7 +53,12 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .bar.spac { color: var(--muted); }
 .bar.selected { outline: 2px solid var(--primary); outline-offset: -2px; }
 
-.list { display: none; margin-top: var(--space-xl); }
+.list { margin-top: var(--space-xl); }
+.drop > summary { display: flex; align-items: center; justify-content: space-between; min-height: 48px; padding: var(--space-md) 0; border-top: 1px solid var(--border); color: var(--foreground); font-size: 1rem; font-weight: 600; cursor: pointer; list-style: none; }
+.drop > summary::-webkit-details-marker { display: none; }
+.drop > summary::after { content: '▾'; color: var(--muted); }
+.drop[open] > summary::after { content: '▴'; }
+.drop > summary:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--focus-inner), 0 0 0 3px var(--focus-outer); }
 .row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-lg); width: 100%; min-height: 56px; padding: var(--space-md) 0; border-top: 1px solid var(--border); text-align: left; }
 .row .name { display: block; color: var(--foreground); font-size: 1rem; font-weight: 600; }
 .row .meta { display: block; color: var(--muted); font-size: 0.8125rem; line-height: 1.5; }
@@ -85,6 +90,3 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .foot p + p { margin-top: var(--space-xs); }
 .msg { padding: var(--space-xl) 0; color: var(--body); }
 
-@media (max-width: 639px) {
-  .list { display: block; }
-}

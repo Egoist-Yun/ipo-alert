@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { monthGrid, barsForMonth, listForMonth } from './calendar.js';
+import { monthGrid, barsForMonth, listForMonth, listTitle, readOpen, saveOpen } from './calendar.js';
 
 const A = { no: 77, name: 'A', sub_start: '2026-11-27', sub_end: '2026-11-30', flag_count: 2, is_spac: false };
 
@@ -78,4 +78,23 @@ test('badgeInfo: after subscription the open-price judgment replaces the pre-sub
 test('badgeInfo: warning level from the data wins', () => {
   assert.deepEqual(badgeInfo({ ...base, warning: 'strong' }), { text: '강한 하락 경고', tone: 'risk' });
   assert.deepEqual(badgeInfo({ ...base, warning: 'warn', prediction: { prob: { warn: true } } }), { text: '하락 경고', tone: 'risk' });
+});
+
+test('listTitle names the month and counts the stocks', () => {
+  assert.equal(listTitle(2026, 11, 13), '11월 청약 목록 · 13개');
+  assert.equal(listTitle(2026, 12, 0), '12월 청약 목록 · 없음');
+});
+
+test('open state: default open, remembered, and safe when storage is broken', () => {
+  const mem = new Map();
+  const store = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) };
+  assert.equal(readOpen(store), true);
+  saveOpen(store, false);
+  assert.equal(readOpen(store), false);
+  saveOpen(store, true);
+  assert.equal(readOpen(store), true);
+  const broken = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };
+  assert.equal(readOpen(broken), true);
+  assert.doesNotThrow(() => saveOpen(broken, false));
+  assert.equal(readOpen(undefined), true);
 });
