@@ -130,6 +130,21 @@ function renderList() {
   $('list').replaceChildren(...parts);
 }
 
+// A short message that fades in at the bottom and goes away by itself (extension: TDS lists a Toast but gives no spec here).
+let toastTimer = 0;
+function showToast(text) {
+  let el = document.getElementById('toast');
+  if (!el) {
+    el = h('div', { id: 'toast', class: 'toast', role: 'status', 'aria-live': 'polite' });
+    document.body.append(el);
+  }
+  el.textContent = text;
+  void el.offsetWidth;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
 // Listing-day alarm (Android app only; the notification plugin exists only in the native shell). Everything stays on the device.
 const notifier = () => (isNativeApp(window) ? window.Capacitor?.Plugins?.LocalNotifications : undefined);
 
@@ -165,7 +180,7 @@ async function syncListingAlarms() {
 
 function alarmNodes(ipo) {
   if (!notifier() || !state.applied.has(ipo.no) || !ipo.listing_date || ipo.first_close != null) return [];
-  return [h('p', { class: 'p' }, state.alarmOff ? '알림이 꺼져 있어요' : '상장일 08:30에 알려드려요. 몇 분 늦을 수 있어요.')];
+  return state.alarmOff ? [h('p', { class: 'p' }, '알림이 꺼져 있어요')] : [];
 }
 
 function appliedNodes(ipo) {
@@ -180,6 +195,10 @@ function appliedNodes(ipo) {
       if (state.applied.has(ipo.no)) await ensureAlarmPermission();  // asked the first time a stock is marked
       await syncListingAlarms();
       renderDetail();
+      // Confirm the alarm as a toast (only when one was really scheduled for this stock).
+      if (state.applied.has(ipo.no) && notifier() && listingAlarms(state.ipos, state.applied, new Date().toISOString()).some(a => a.no === ipo.no)) {
+        showToast(state.alarmOff ? '알림이 꺼져 있어요' : '상장일 08:30에 알림으로 알려드릴게요, 몇 분 늦을 수 있어요');
+      }
     },
   }, on ? '신청 표시 취소' : '청약 신청했어요')];
 }

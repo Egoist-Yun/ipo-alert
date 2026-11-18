@@ -125,3 +125,8 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .foot p + p { margin-top: var(--space-xs); }
 .msg { padding: var(--space-xl) 0; color: var(--body); }
 
+
+/* Toast (extension: tokens only, flat, no shadow): fades in at the bottom, removed by a timer in app.js. */
+.toast { position: fixed; left: 50%; bottom: calc(var(--space-xl) + var(--inset-bottom)); z-index: 3; transform: translateX(-50%); width: max-content; max-width: calc(100% - 2 * var(--space-lg)); padding: 12px var(--space-lg); border-radius: 12px; background: var(--foreground); color: var(--canvas); font-size: 0.9375rem; font-weight: 600; line-height: 1.5; text-align: center; opacity: 0; pointer-events: none; transition: opacity 200ms ease-out; }
+.toast.show { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
