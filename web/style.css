@@ -30,9 +30,8 @@ button:active, a.btn-medium:active { transform: scale(0.96); }
 button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--focus-inner), 0 0 0 3px var(--focus-outer); }
 
 .page { max-width: 720px; margin: 0 auto; padding: var(--space-xl) var(--space-lg) var(--space-xxl); }
-.head { margin-bottom: var(--space-xl); }
+.head { margin-bottom: var(--space-lg); }
 .title { color: var(--foreground); font-size: 1.5rem; font-weight: 600; line-height: 1.5; }
-.sub { color: var(--muted); font-size: 0.875rem; line-height: 1.5; }
 
 .stale { margin-bottom: var(--space-lg); color: var(--danger); font-size: 0.875rem; font-weight: 600; line-height: 1.5; }
 .stale:empty { display: none; }
@@ -82,7 +81,6 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .kv .v { color: var(--foreground); font-weight: 600; text-align: right; }
 .kv .v.flag { color: var(--danger); }
 .kv .v.unknown { color: var(--muted); font-weight: 400; }
-.note { margin-top: var(--space-sm); color: var(--muted); font-size: 0.8125rem; line-height: 1.5; }
 .p { color: var(--foreground); font-size: 0.9375rem; line-height: 1.5; }
 .btn-medium { display: inline-flex; align-items: center; justify-content: center; height: 38px; margin-top: var(--space-xl); padding: 0 var(--space-lg); border-radius: 10px; background: var(--weak-bg); color: var(--weak-fg); font-size: 0.9375rem; font-weight: 600; text-decoration: none; }
 

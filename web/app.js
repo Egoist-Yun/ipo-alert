@@ -108,7 +108,7 @@ function renderList() {
 function brokerNodes(ipo) {
   if (!showBrokerButtons(ipo, kstToday())) return [];
   if (!isAndroid(navigator.userAgent)) {
-    return [h('p', { class: 'note' }, '증권사 앱 열기는 안드로이드에서 할 수 있어요.')];
+    return [];
   }
   const links = brokerLinks(ipo.underwriters);
   if (!links.length) return [];
@@ -151,7 +151,6 @@ function renderDetail() {
   if (ipo.listing_date) nodes.push(kv('상장', md(ipo.listing_date)));
 
   if (ipo.is_spac) {
-    nodes.push(h('p', { class: 'note' }, '스팩은 위험 신호를 계산하지 않아요.'));
   } else if (ipo.inst_competition == null) {
     nodes.push(h('p', { class: 'summary' }, '기관 수요예측 결과가 아직 없어요.'));
   } else {
@@ -177,14 +176,11 @@ function patternNodes(ipo) {
   for (const p of risks) {
     const rate = p.close_down != null ? `${(p.close_down * 100).toFixed(0)}%` : '-';
     const open = p.phase === 'post' && p.open_down != null ? ` · 시초가 ${(p.open_down * 100).toFixed(0)}%` : '';
-    nodes.push(kv(p.label, `하락 ${rate}${open}`, 'flag'));
-    nodes.push(h('p', { class: 'note' }, `2023년 6월 이후 같은 조건의 ${p.n}개 중 첫날 공모가 아래로 끝난 비율${p.phase === 'post' ? ' (청약 후에 알 수 있는 조건)' : ''}`));
+    nodes.push(kv(p.label, `하락 ${rate}${open} · ${p.n}개`, 'flag'));
   }
   for (const p of safes) {
-    nodes.push(kv(p.label, `하락 ${(p.close_down * 100).toFixed(0)}%`));
-    nodes.push(h('p', { class: 'note' }, `과거 하락이 드문 패턴이에요. 2023년 6월 이후 같은 조건의 ${p.n}개 기준.`));
+    nodes.push(kv(p.label, `하락 ${(p.close_down * 100).toFixed(0)}% · ${p.n}개`));
   }
-  nodes.push(h('p', { class: 'note' }, '함께 나타난 특성일 뿐, 하락의 원인이라는 뜻은 아니에요.'));
   return nodes;
 }
 
@@ -194,10 +190,6 @@ function resultNodes(ipo) {
   if (ipo.open_price != null) nodes.push(kv('시초가', `${won(ipo.open_price)} (${pct(ipo.open_price / base - 1)})`));
   nodes.push(kv('첫날 종가', `${won(ipo.first_close)} (${pct(ipo.first_close / base - 1)})`));
   return nodes;
-}
-
-function warnNote(w) {
-  return `경고 기준 ${(w.threshold * 100).toFixed(0)}% 이상. 과거 검증에서 하락의 ${(w.recall * 100).toFixed(0)}%를 미리 잡았고, 경고의 ${(w.precision * 100).toFixed(0)}%가 맞았어요.`;
 }
 
 function predictionNodes(ipo) {
@@ -216,9 +208,7 @@ function predictionNodes(ipo) {
     nodes.push(h('p', { class: 'summary warn' }, strong ? '강한 하락 경고' : '하락 경고'));
     const sp = strong ? w.strong_precision : w.precision;
     const sr = strong ? w.strong_recall : w.recall;
-    const why = strong ? '모델과 과거 하락 패턴이 모두 하락을 가리켜요.' : '모델이 하락을 가리켜요. 과거 하락 패턴과는 겹치지 않아요.';
-    const stat = sp != null ? ` 과거 검증에서 이런 경고의 ${(sp * 100).toFixed(0)}%가 맞았고, 하락의 ${(sr * 100).toFixed(0)}%를 미리 잡았어요.` : '';
-    nodes.push(h('p', { class: 'note' }, why + stat));
+    if (sp != null) nodes.push(kv('과거 경고 적중', `${(sp * 100).toFixed(0)}% · 하락의 ${(sr * 100).toFixed(0)}% 포착`));
   }
   if (p.conflict) {
     nodes.push(h('p', { class: 'summary' }, ipo.warning ? '가격 예측은 상승이지만, 하락을 미리 잡는 데는 과거에 경고가 가격 예측보다 정확했어요.' : '신호와 예측이 엇갈려요. 두 가지를 함께 보세요.'));
@@ -228,23 +218,18 @@ function predictionNodes(ipo) {
     for (const [key, label] of [['open', '시초가 예상'], ['close', '첫날 종가 예상']]) {
       const e = p[key];
       if (!e) continue;
-      nodes.push(kv(label + (e.uses_retail ? ' (일반청약 경쟁률 반영)' : ''), `${won(e.price)} (${pct(e.return)})`, e.return < 0 ? 'flag' : ''));
-      nodes.push(h('p', { class: 'note' }, `과거 검증: 평균 오차 ±${(e.mae * 100).toFixed(0)}%p, 공모가 위/아래 적중 ${(e.direction_acc * 100).toFixed(0)}%`));
+      nodes.push(kv(`${label}${e.uses_retail ? ' · 일반청약 반영' : ''} (±${(e.mae * 100).toFixed(0)}%p)`, `${won(e.price)} (${pct(e.return)})`, e.return < 0 ? 'flag' : ''));
     }
   }
   if (p.open_down) {
     const o = p.open_down;
     nodes.push(h('h4', {}, '청약 후: 시초가가 공모가 아래일 확률'));
-    if (o.warn) nodes.push(h('p', { class: 'summary warn' }, '시초가 하락 경고'));
     nodes.push(kv('일반청약 경쟁률 반영', `${(o.p_down * 100).toFixed(0)}%`, o.warn ? 'flag' : ''));
-    nodes.push(h('p', { class: 'note' }, warnNote(o)));
   }
   if (p.prob) {
     const q = p.prob;
     nodes.push(h('h4', {}, '공모가 아래로 끝날 확률'));
-    if (q.warn) nodes.push(h('p', { class: 'summary warn' }, '하락 경고'));
     nodes.push(kv('첫날 종가 기준', `${(q.p_down * 100).toFixed(0)}%`, q.warn ? 'flag' : ''));
-    if (q.threshold != null) nodes.push(h('p', { class: 'note' }, warnNote(q)));
   }
   if (p.knn) {
     const k = p.knn;
@@ -253,7 +238,6 @@ function predictionNodes(ipo) {
     nodes.push(kv('비슷한 종목의 가운데 절반 범위', `${won(k.price_low)} ~ ${won(k.price_high)}`));
     nodes.push(kv('가운데 값', pct(k.median)));
     for (const it of k.items) nodes.push(kv(it.name, pct(it.return)));
-    if (acc.knn) nodes.push(h('p', { class: 'note' }, `과거 검증: 공모가 위/아래 적중 ${(acc.knn.direction_acc * 100).toFixed(0)}%, 평균 오차 ±${(acc.knn.mae * 100).toFixed(0)}%p`));
   }
   return nodes;
 }
