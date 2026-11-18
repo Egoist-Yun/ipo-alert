@@ -138,3 +138,14 @@ export function verdictInfo(ipo) {
   const unknown = ipo.unknown_count ?? 0;
   return { text: unknown ? `하락 경고 없음 · 확인 불가 ${unknown}개` : '하락 경고 없음', tone: '' };
 }
+
+// Which screen a location hash asks for: the list (default), one stock's detail (#<no>) or the live record (#record).
+export function parseRoute(hash, ipos) {
+  const h = typeof hash === 'string' && hash.startsWith('#') ? hash.slice(1) : '';
+  if (h === 'record') return { view: 'record', no: null };
+  if (/^\d+$/.test(h)) {
+    const no = Number(h);
+    if ((ipos || []).some(i => i.no === no)) return { view: 'detail', no };
+  }
+  return { view: 'list', no: null };
+}

@@ -65,9 +65,11 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .badge.risk { background: var(--danger-weak); color: var(--danger); }
 .badge.wait { background: var(--surface); color: var(--body); }
 
-.detail { margin-top: var(--space-xl); }
+.detail { margin-top: var(--space-lg); }
 .detail:empty { display: none; }
-.record { margin-top: var(--space-xl); }
+.record { margin-top: var(--space-lg); }
+.record-link { margin-top: var(--space-xl); }
+[hidden] { display: none !important; }
 .record:empty { display: none; }
 .panel { padding: var(--space-xl) 0 0; border-top: 1px solid var(--border); }
 .panel h3 { color: var(--foreground); font-size: 1.375rem; font-weight: 600; line-height: 1.5; }

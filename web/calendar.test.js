@@ -184,3 +184,34 @@ test('verdictInfo: waiting, spac and listed stocks have no verdict line', () => 
   assert.equal(verdictInfo({ ...base, is_spac: true }), null);
   assert.equal(verdictInfo({ ...base, first_close: 9000, final_price: 10000 }), null);
 });
+
+import { parseRoute } from './calendar.js';
+
+const stocks = [{ no: 2352 }, { no: 2336 }];
+
+test('parseRoute: no hash is the list view', () => {
+  assert.deepEqual(parseRoute('', stocks), { view: 'list', no: null });
+  assert.deepEqual(parseRoute('#', stocks), { view: 'list', no: null });
+});
+
+test('parseRoute: a known stock number opens its detail', () => {
+  assert.deepEqual(parseRoute('#2352', stocks), { view: 'detail', no: 2352 });
+});
+
+test('parseRoute: an unknown stock number falls back to the list', () => {
+  assert.deepEqual(parseRoute('#9999', stocks), { view: 'list', no: null });
+  assert.deepEqual(parseRoute('#2352', []), { view: 'list', no: null });
+});
+
+test('parseRoute: #record opens the live record', () => {
+  assert.deepEqual(parseRoute('#record', stocks), { view: 'record', no: null });
+  assert.deepEqual(parseRoute('#record', []), { view: 'record', no: null });
+});
+
+test('parseRoute: malformed values never open a detail', () => {
+  for (const bad of ['#abc', '#2352abc', '#-5', '#1.5', '#0x10', '#2352/x', '#RECORD', 'record', '#%E0%A4%A']) {
+    assert.deepEqual(parseRoute(bad, stocks), { view: 'list', no: null }, bad);
+  }
+  assert.deepEqual(parseRoute(undefined, stocks), { view: 'list', no: null });
+  assert.deepEqual(parseRoute(null, null), { view: 'list', no: null });
+});

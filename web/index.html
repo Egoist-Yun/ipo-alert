@@ -14,6 +14,7 @@
 </head>
 <body>
   <main class="page">
+   <div id="v-list">
     <header class="head">
       <h1 class="title">공모주 청약 달력</h1>
     </header>
@@ -31,13 +32,19 @@
     </section>
 
     <section class="list" id="list" aria-label="이번 달 청약 목록"></section>
-    <section class="detail" id="detail" aria-live="polite"></section>
-    <section class="record" id="record" aria-label="실전 성적"></section>
+    <a class="btn-medium record-link" id="record-link" href="#record" hidden>실전 성적 보기</a>
 
     <footer class="foot">
       <p id="updated"></p>
       <p id="disclaimer"></p>
     </footer>
+   </div>
+
+   <div id="v-sub" hidden>
+    <button class="btn-small" id="back" type="button">← 달력</button>
+    <section class="detail" id="detail" aria-live="polite" hidden></section>
+    <section class="record" id="record" aria-label="실전 성적" hidden></section>
+   </div>
   </main>
   <script type="module" src="app.js"></script>
 </body>

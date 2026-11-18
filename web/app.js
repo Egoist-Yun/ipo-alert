@@ -1,9 +1,9 @@
-import { monthGrid, barsForMonth, listForMonth, badgeInfo, staleHours, listTitle, readOpen, saveOpen, needsRefresh, warnText, recordRows, verdictInfo } from './calendar.js';
+import { monthGrid, barsForMonth, listForMonth, badgeInfo, staleHours, listTitle, readOpen, saveOpen, needsRefresh, warnText, recordRows, verdictInfo, parseRoute } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
 const loadedAt = Date.now();
-const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null };
+const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null, ledger: null, listScroll: 0 };
 
 function h(tag, props, ...kids) {
   const el = document.createElement(tag);
@@ -41,11 +41,20 @@ function valueText(sig) {
 const tone = ipo => badgeInfo(ipo).tone;
 const badgeText = ipo => badgeInfo(ipo).text;
 
-function select(no) {
-  state.selected = no;
-  history.replaceState(null, '', no == null ? location.pathname : `#${no}`);
-  render();
-  if (no != null) $('detail').scrollIntoView({ block: 'start' });
+// Screens are chosen by the URL hash (#<no> detail, #record, none = list). Moves made inside the app push a history
+// entry marked {app: true}, so "← 달력" and the phone's back key return to the list exactly as it was left.
+function go(hash) {
+  state.listScroll = state.view === 'list' ? window.scrollY : state.listScroll;
+  history.pushState({ app: true }, '', hash ? `#${hash}` : location.pathname + location.search);
+  route();
+}
+
+function select(no) { go(String(no)); }
+
+function goBack() {
+  if (history.state && history.state.app) { history.back(); return; }
+  history.replaceState(null, '', location.pathname + location.search);  // opened by a link: no list entry before it
+  route();
 }
 
 function renderCalendar() {
@@ -99,10 +108,10 @@ function renderList() {
         h('span', { class: 'meta' }, `청약 ${md(ipo.sub_start)}~${md(ipo.sub_end)}`)),
       h('span', { class: `badge ${cls}` }, badgeText(ipo)));
   });
-  const box = h('details', { class: 'drop', open: state.selected == null ? readOpen(localStore()) : false },
+  const box = h('details', { class: 'drop', open: readOpen(localStore()) },
     h('summary', {}, h('span', {}, listTitle(state.year, state.month, items.length))),
     rows);
-  box.addEventListener('toggle', () => { if (state.selected == null) saveOpen(localStore(), box.open); });
+  box.addEventListener('toggle', () => saveOpen(localStore(), box.open));
   $('list').replaceChildren(box);
 }
 
@@ -250,20 +259,42 @@ function referenceNodes(ipo) {
   return [h('details', { class: 'drop' }, h('summary', {}, h('span', {}, title)), inner)];
 }
 
-function renderRecord(ledger) {
+function renderRecord() {
+  const ledger = state.ledger;
   const r = recordRows(ledger);
-  if (!r) return;
+  if (!r) { $('record').replaceChildren(h('div', { class: 'panel' }, h('h4', {}, '실전 성적'), h('p', { class: 'p' }, '아직 기록이 없어요.'))); return; }
   const nodes = [h('h4', {}, `실전 성적 (${ledger.since.slice(5).replace('-', '/')} 이후 상장 전에 저장한 예측)`)];
   if (!r.rows.length) nodes.push(h('p', { class: 'p' }, '아직 저장된 예측이 없어요.'));
   for (const [label, value] of r.rows) nodes.push(kv(label, value));
   if (r.early) nodes.push(h('p', { class: 'p' }, '아직 판단하기 일러요.'));
-  $('record').replaceChildren(...nodes);
+  $('record').replaceChildren(h('div', { class: 'panel' }, nodes));
 }
 
 function render() {
   renderCalendar();
   renderList();
-  renderDetail();
+}
+
+function route() {
+  const r = parseRoute(location.hash, state.ipos);
+  state.view = r.view;
+  state.selected = r.view === 'detail' ? r.no : null;
+  $('v-list').hidden = r.view !== 'list';
+  $('v-sub').hidden = r.view === 'list';
+  $('detail').hidden = r.view !== 'detail';
+  $('record').hidden = r.view !== 'record';
+  if (r.view === 'list') {
+    render();
+    window.scrollTo(0, state.listScroll);
+    return;
+  }
+  const ipo = state.ipos.find(i => i.no === r.no);
+  if (ipo && ipo.sub_start) {  // the list comes back on this stock's month
+    state.year = Number(ipo.sub_start.slice(0, 4));
+    state.month = Number(ipo.sub_start.slice(5, 7));
+  }
+  if (r.view === 'detail') renderDetail(); else renderRecord();
+  window.scrollTo(0, 0);
 }
 
 function shift(delta) {
@@ -280,23 +311,11 @@ function reloadWhenStale() {
 document.addEventListener('visibilitychange', reloadWhenStale);
 window.addEventListener('pageshow', reloadWhenStale);
 
-// A notification link (#<stock no>) selects that stock, opens its detail and scrolls to it.
-function selectFromHash() {
-  const hit = state.ipos.find(i => i.no === Number(location.hash.slice(1)));
-  if (!hit) return false;
-  state.selected = hit.no;
-  if (hit.sub_start) {
-    state.year = Number(hit.sub_start.slice(0, 4));
-    state.month = Number(hit.sub_start.slice(5, 7));
-  }
-  render();
-  $('detail').scrollIntoView({ block: 'start' });  // layout is forced here; no need to wait for a frame
-  return true;
-}
-
 async function init() {
   $('prev').addEventListener('click', () => shift(-1));
   $('next').addEventListener('click', () => shift(1));
+  $('back').addEventListener('click', goBack);
+  $('record-link').addEventListener('click', ev => { ev.preventDefault(); go('record'); });
   const today = kstToday();
   state.year = Number(today.slice(0, 4));
   state.month = Number(today.slice(5, 7));
@@ -305,7 +324,8 @@ async function init() {
     if (!res.ok) throw new Error(res.status);
     const data = await res.json();
     state.ipos = data.ipos || [];
-    renderRecord(data.ledger);
+    state.ledger = data.ledger || null;
+    $('record-link').hidden = !state.ledger;
     const t = new Date(data.updated_at);
     $('updated').textContent = Number.isNaN(t.getTime()) ? '' : `마지막 갱신 ${t.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
     $('disclaimer').textContent = data.disclaimer || '';
@@ -315,8 +335,9 @@ async function init() {
     $('weeks').replaceChildren(h('p', { class: 'msg' }, '데이터를 불러오지 못했어요. 잠시 뒤 다시 열어주세요.'));
     return;
   }
-  window.addEventListener('hashchange', selectFromHash);
-  if (!selectFromHash()) render();
+  window.addEventListener('hashchange', route);
+  window.addEventListener('popstate', route);
+  route();
 }
 
 init();
