@@ -312,12 +312,14 @@ function openSub(animate) {
   const sub = $('v-sub');
   subToken++;
   sub.classList.remove('sub-in', 'sub-out');
+  $('v-list').classList.remove('list-away', 'list-back');
   sub.hidden = false;
   sub.scrollTop = 0;
   $('v-list').inert = true;
   if (animate && !reduceMotion()) {
     void sub.offsetWidth;  // restart the animation when the layer was already animating
     sub.classList.add('sub-in');
+    $('v-list').classList.add('list-away');  // parallax: the list slides left a little while the layer comes in
   }
 }
 
@@ -329,11 +331,15 @@ function closeSub() {
   if (reduceMotion()) { sub.hidden = true; return; }
   sub.classList.remove('sub-in');
   sub.classList.add('sub-out');
+  $('v-list').classList.remove('list-away');
+  void sub.offsetWidth;
+  $('v-list').classList.add('list-back');  // ...and slides back from the left while the layer leaves
   setTimeout(() => {
     if (token !== subToken) return;  // opened again meanwhile
     sub.hidden = true;
     sub.classList.remove('sub-out');
-  }, 220);
+    $('v-list').classList.remove('list-back');
+  }, 290);
 }
 
 function route() {
