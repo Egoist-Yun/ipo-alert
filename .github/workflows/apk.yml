@@ -1,0 +1,69 @@
+name: apk
+
+# Rebuilds the Android app only when its native part changes (app/**). Screen and data changes need no rebuild:
+# the app loads the GitHub Pages site, which the update workflow redeploys.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "!app/README.md"
+      - ".github/workflows/apk.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: apk
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # An installed app can only be updated by an APK signed with the same key. Without this secret every build gets a
+      # fresh random debug key, so the phone must uninstall the old app first (the app keeps no data).
+      - name: Signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            mkdir -p ~/.android
+            echo "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+          else
+            echo "::warning::ANDROID_DEBUG_KEYSTORE_BASE64 is not set: this APK has a new signing key and cannot update an installed copy."
+          fi
+
+      - run: npm ci
+        working-directory: app
+
+      - run: npx cap sync android
+        working-directory: app
+
+      - run: chmod +x gradlew && ./gradlew assembleDebug --console=plain
+        working-directory: app/android
+
+      - name: Publish the APK (rolling release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/android/app/build/outputs/apk/debug/app-debug.apk ipo-calendar-debug.apk
+          gh release delete apk-latest --cleanup-tag --yes || true
+          gh release create apk-latest ipo-calendar-debug.apk \
+            --target "${{ github.sha }}" --latest=false \
+            --title "공모주 달력 앱 (자동 빌드)" \
+            --notes "app/ 변경으로 자동 빌드됨 (${GITHUB_SHA::7}). 디버그 서명, 개인용."
