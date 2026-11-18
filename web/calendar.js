@@ -97,3 +97,22 @@ export function warnText(w, strong) {
   const sr = strong ? w.strong_recall : w.recall;
   return sp != null && sr != null ? `적중 ${(sp * 100).toFixed(0)}% · 하락의 ${(sr * 100).toFixed(0)}% 포착` : null;
 }
+
+// Live record: predictions saved before listing, scored afterwards. Counts only (no percentages): the sample is small.
+const RECORD_LABELS = { pre: '청약 전 모델 (종가 기준)', post: '청약 마감 후 모델 (시초가 기준)' };
+
+export function recordRows(ledger) {
+  if (!ledger) return null;
+  const rows = [];
+  let early = false;
+  for (const key of ['pre', 'post']) {
+    const m = ledger[key];
+    if (!m || !m.saved) continue;
+    const label = RECORD_LABELS[key];
+    rows.push([label, `경고 ${m.warned}개 중 ${m.caught}개 적중 · 하락 ${m.n_down}개 중 ${m.caught}개 포착`]);
+    if (m.strong_warned) rows.push([`${label.split(' (')[0]} 강한 경고`, `${m.strong_warned}개 중 ${m.strong_caught}개 적중`]);
+    if (m.pending) rows.push([`${label.split(' (')[0]} 결과 대기`, `${m.pending}개`]);
+    if (m.early) early = true;
+  }
+  return { rows, early };
+}

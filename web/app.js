@@ -1,4 +1,4 @@
-import { monthGrid, barsForMonth, listForMonth, badgeInfo, staleHours, listTitle, readOpen, saveOpen, needsRefresh, warnText } from './calendar.js';
+import { monthGrid, barsForMonth, listForMonth, badgeInfo, staleHours, listTitle, readOpen, saveOpen, needsRefresh, warnText, recordRows } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
@@ -244,6 +244,16 @@ function predictionNodes(ipo) {
   return nodes;
 }
 
+function renderRecord(ledger) {
+  const r = recordRows(ledger);
+  if (!r) return;
+  const nodes = [h('h4', {}, `실전 성적 (${ledger.since.slice(5).replace('-', '/')} 이후 상장 전에 저장한 예측)`)];
+  if (!r.rows.length) nodes.push(h('p', { class: 'p' }, '아직 저장된 예측이 없어요.'));
+  for (const [label, value] of r.rows) nodes.push(kv(label, value));
+  if (r.early) nodes.push(h('p', { class: 'p' }, '아직 판단하기 일러요.'));
+  $('record').replaceChildren(...nodes);
+}
+
 function render() {
   renderCalendar();
   renderList();
@@ -275,6 +285,7 @@ async function init() {
     if (!res.ok) throw new Error(res.status);
     const data = await res.json();
     state.ipos = data.ipos || [];
+    renderRecord(data.ledger);
     const t = new Date(data.updated_at);
     $('updated').textContent = Number.isNaN(t.getTime()) ? '' : `마지막 갱신 ${t.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
     $('disclaimer').textContent = data.disclaimer || '';

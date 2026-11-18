@@ -17,6 +17,8 @@ from ipo.notify import (due_alerts, failure_alert, format_alert, format_pre_aler
                         send)
 from ipo.patterns import match_patterns, pattern_stats, warning_level
 from ipo.predict import _usable, calibrate, coverage_names, evaluate, predict_for, select_features
+from ipo.ledger import (fill_results, ledger_markdown, load_ledger, model_id, record_predictions, save_ledger,
+                        summarize, update_backtest_md)
 from ipo.signals import score
 
 CALENDAR_DAYS_BACK = 90
@@ -81,6 +83,22 @@ def _build(data_dir: Path, now_kst: datetime, fetch) -> list:
     return sorted(out, key=lambda i: (i.sub_start, i.no))
 
 
+def _update_ledger(data_dir: Path, ipos: list, now_kst: datetime) -> dict | None:
+    """Save new predictions, fill results, refresh the score. A failure here must never break the calendar."""
+    try:
+        path = data_dir / "predictions.json"
+        ledger = load_ledger(path)
+        record_predictions(ledger, ipos, now_kst, model_id(data_dir / "model.json"))
+        fill_results(ledger, ipos, now_kst)
+        save_ledger(path, ledger)
+        summary = summarize(ledger)
+        update_backtest_md(data_dir / "backtest.md", ledger_markdown(summary))
+        return summary
+    except Exception:
+        traceback.print_exc()
+        return None
+
+
 def run(data_dir: Path, topic: str | None, site_url: str, now_kst: datetime,
         fetch=get_html, post=requests.post) -> int:
     data_dir = Path(data_dir)
@@ -88,7 +106,7 @@ def run(data_dir: Path, topic: str | None, site_url: str, now_kst: datetime,
     try:
         ipos = _build(data_dir, now_kst, fetch)
         payload = {"updated_at": now_kst.isoformat(), "disclaimer": config.DISCLAIMER,
-                   "ipos": [asdict(i) for i in ipos]}
+                   "ledger": _update_ledger(data_dir, ipos, now_kst), "ipos": [asdict(i) for i in ipos]}
         _atomic_write(data_dir / "ipos.json", json.dumps(payload, ensure_ascii=False))
     except Exception as e:
         traceback.print_exc()

@@ -115,3 +115,24 @@ def test_model_config_recomputes_a_cache_saved_before_counts_and_intervals(tmp_p
     assert cal == fresh
     names, cal = main._model_config(tmp_path, [], [])  # now cached and complete
     assert cal == fresh
+
+
+def test_run_records_predictions_and_reports_the_ledger_score(tmp_path):
+    now = datetime(2026, 11, 18, 18, 0, tzinfo=KST)
+    assert run(tmp_path, None, "", now, fetch=fake_fetch, post=Rec()) == 0
+    led = json.loads((tmp_path / "predictions.json").read_text("utf-8"))
+    data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
+    assert data["ledger"]["pre"]["saved"] == len([e for e in led.values() if "pre" in e])
+    assert all(e["pre"]["saved_at"].startswith("2026-11-18") for e in led.values() if "pre" in e)
+    assert "실전 성적" in (tmp_path / "backtest.md").read_text("utf-8")
+    before = (tmp_path / "predictions.json").read_text("utf-8")
+    assert run(tmp_path, None, "", now, fetch=fake_fetch, post=Rec()) == 0
+    assert (tmp_path / "predictions.json").read_text("utf-8") == before
+
+
+def test_a_ledger_failure_never_breaks_the_calendar(tmp_path, monkeypatch):
+    from ipo import main
+    monkeypatch.setattr(main, "record_predictions", lambda *a, **k: 1 / 0)
+    assert run(tmp_path, None, "", NOW, fetch=fake_fetch, post=Rec()) == 0
+    data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
+    assert data["ledger"] is None and data["ipos"]

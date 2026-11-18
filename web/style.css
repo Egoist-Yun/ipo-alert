@@ -67,6 +67,8 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 
 .detail { margin-top: var(--space-xl); }
 .detail:empty { display: none; }
+.record { margin-top: var(--space-xl); }
+.record:empty { display: none; }
 .panel { padding: var(--space-xl) 0 0; border-top: 1px solid var(--border); }
 .panel h3 { color: var(--foreground); font-size: 1.375rem; font-weight: 600; line-height: 1.5; }
 .chips { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin: var(--space-md) 0 var(--space-lg); }

@@ -123,3 +123,28 @@ test('warnText states counts when known, percentages for older data', () => {
   assert.equal(warnText({ precision: 0.62, recall: 0.83 }, false), '적중 62% · 하락의 83% 포착');
   assert.equal(warnText({}, false), null);
 });
+
+import { recordRows } from './calendar.js';
+
+const model = (o = {}) => ({ saved: 3, resolved: 2, pending: 1, warned: 2, caught: 1, strong_warned: 1, strong_caught: 1, n_down: 2, early: true, ...o });
+
+test('recordRows: counts only, per model, with a pending row and the too-early note', () => {
+  const r = recordRows({ since: '2026-11-18', pre: model(), post: model({ saved: 0, resolved: 0, pending: 0, warned: 0, caught: 0, n_down: 0 }) });
+  assert.deepEqual(r.rows, [
+    ['청약 전 모델 (종가 기준)', '경고 2개 중 1개 적중 · 하락 2개 중 1개 포착'],
+    ['청약 전 모델 강한 경고', '1개 중 1개 적중'],
+    ['청약 전 모델 결과 대기', '1개'],
+  ]);
+  assert.equal(r.early, true);
+  assert.ok(r.rows.every(([, v]) => !v.includes('%')));
+});
+
+test('recordRows: nothing saved yet, or no ledger at all', () => {
+  const none = model({ saved: 0, resolved: 0, pending: 0, warned: 0, caught: 0, strong_warned: 0, strong_caught: 0, n_down: 0 });
+  assert.deepEqual(recordRows({ since: '2026-11-18', pre: none, post: none }).rows, []);
+  assert.equal(recordRows(null), null);
+});
+
+test('recordRows: enough declines drops the too-early note', () => {
+  assert.equal(recordRows({ since: 'x', pre: model({ n_down: 10, early: false }), post: model({ saved: 0, early: false }) }).early, false);
+});

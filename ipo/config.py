@@ -32,3 +32,6 @@ SELECT_CHUNK = 5
 
 WARN_RECALL = 0.7          # warning threshold must catch this share of declines on the validation window
 RECENT_FROM = "2023-05-01" # price models and the pre-subscription model learn from listings after this date
+
+LEDGER_START = "2026-11-18"   # predictions are recorded (and scored) only for stocks first predicted on or after this date
+LEDGER_MIN_DOWNS = 10         # fewer resolved declines than this: the score is "too early to judge"
