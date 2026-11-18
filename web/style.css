@@ -26,7 +26,10 @@ html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; background: var(--canvas); color: var(--body); font: 400 1rem/1.5 var(--font); }
 h1, h2, h3, h4, p { margin: 0; }
 button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; }
-button:active, a.btn-medium:active { transform: scale(0.96); }
+/* Press feedback, approximated from a Toss app screen recording (30fps), not official values: it reacts ~150ms after the
+   touch (so a quick tap does not shrink), shrinks in ~50ms and returns in ~130ms with no delay. */
+button, a.btn-medium { transition: transform 130ms ease-out, opacity 130ms ease-out; }
+button:active, a.btn-medium:active { transform: scale(0.96); opacity: 0.8; transition-duration: 50ms; transition-delay: 150ms; }
 button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--focus-inner), 0 0 0 3px var(--focus-outer); }
 
 /* Edge-to-edge screens (the Android app, phones with a camera cut-out): keep content out from under the status bar / camera /
@@ -91,6 +94,7 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 @keyframes list-away { from { transform: none; } to { transform: translateX(-32%); } }
 @keyframes list-back { from { transform: translateX(-32%); } to { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .sub-in, .sub-out, .list-away, .list-back { animation: none; } }
+@media (prefers-reduced-motion: reduce) { button, a.btn-medium, button:active, a.btn-medium:active { transition: none; } }
 .detail { margin-top: var(--space-lg); }
 .title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-lg); }
 .title-row h3 { min-width: 0; }

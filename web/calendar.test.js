@@ -306,3 +306,52 @@ test('listingLabel: the sell day, or unknown', () => {
   assert.equal(listingLabel({ listing_date: '2026-12-03' }), '12/3 상장');
   assert.equal(listingLabel({}), '상장일 미정');
 });
+
+import { listingAlarms } from './calendar.js';
+
+const L = (no, listing_date, extra = {}) => ({ no, name: `S${no}`, listing_date, final_price: 19000, ...extra });
+const NOV30 = '2026-11-30';
+
+test('listingAlarms: a marked stock is alarmed at 08:30 KST on its listing day', () => {
+  const [a] = listingAlarms([L(7, NOV30)], new Set([7]), '2026-11-18T17:35:00+09:00');
+  assert.deepEqual(a, {
+    id: 7, no: 7, at: '2026-11-30T08:30:00+09:00',
+    title: '오늘 S7 상장', body: '시초가 매도 준비. 공모가 19,000원',
+  });
+});
+
+test('listingAlarms: the listing-day boundary is 08:30 sharp (an alarm in the past is dropped)', () => {
+  const run = now => listingAlarms([L(7, NOV30)], new Set([7]), now).length;
+  assert.equal(run('2026-11-30T08:29:59+09:00'), 1);
+  assert.equal(run('2026-11-30T08:30:00+09:00'), 0);
+  assert.equal(run('2026-11-30T09:10:00+09:00'), 0);
+  assert.equal(run('2026-12-01T00:00:00+09:00'), 0);
+  assert.equal(run('2026-11-29T23:29:00Z'), 1);  // UTC input is compared as an instant: 23:29Z = 08:29 KST
+  assert.equal(run('2026-11-29T23:31:00Z'), 0);  // 23:31Z = 08:31 KST
+});
+
+test('listingAlarms: not marked, marked off, or no listing date means no alarm', () => {
+  const now = '2026-11-18T10:00:00+09:00';
+  assert.deepEqual(listingAlarms([L(7, NOV30)], new Set(), now), []);
+  assert.deepEqual(listingAlarms([L(7, NOV30)], new Set([8]), now), []);
+  assert.deepEqual(listingAlarms([L(7, null)], new Set([7]), now), []);
+  assert.deepEqual(listingAlarms([{ no: 7, name: 'x' }], new Set([7]), now), []);
+  assert.deepEqual(listingAlarms([L(7, '11/30')], new Set([7]), now), []);
+});
+
+test('listingAlarms: spacs that were marked get an alarm too; ids are the stock numbers; sorted by time', () => {
+  const got = listingAlarms([L(9, '2026-12-03'), L(5, NOV30, { is_spac: true })], new Set([5, 9]), '2026-11-18T10:00:00+09:00');
+  assert.deepEqual(got.map(a => [a.id, a.at]), [[5, '2026-11-30T08:30:00+09:00'], [9, '2026-12-03T08:30:00+09:00']]);
+});
+
+test('listingAlarms: the body drops the price when unknown and adds the warning line', () => {
+  const now = '2026-11-18T10:00:00+09:00';
+  assert.equal(listingAlarms([L(7, NOV30, { final_price: null })], new Set([7]), now)[0].body, '시초가 매도 준비.');
+  assert.equal(listingAlarms([L(7, NOV30, { warning: 'warn' })], new Set([7]), now)[0].body, '시초가 매도 준비. 공모가 19,000원\n하락 경고가 있어요.');
+  assert.equal(listingAlarms([L(7, NOV30, { warning: 'strong' })], new Set([7]), now)[0].body, '시초가 매도 준비. 공모가 19,000원\n강한 하락 경고가 있어요.');
+});
+
+test('listingAlarms: a bad clock value yields nothing instead of throwing', () => {
+  assert.deepEqual(listingAlarms([L(7, NOV30)], new Set([7]), 'garbage'), []);
+  assert.deepEqual(listingAlarms([], new Set([7]), '2026-11-18T10:00:00+09:00'), []);
+});

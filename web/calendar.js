@@ -197,3 +197,20 @@ export function toggleApplied(set, no) {
   if (!next.delete(no)) next.add(no);
   return next;
 }
+
+// Local alarm for each stock the user marked as applied: 08:30 KST on its listing day (pre-market orders open then).
+// Pure: the app schedules exactly this list and cancels anything else it had scheduled.
+export function listingAlarms(ipos, applied, nowIso) {
+  const now = Date.parse(nowIso);
+  if (Number.isNaN(now)) return [];
+  return ipos
+    .filter(i => applied.has(i.no) && /^\d{4}-\d{2}-\d{2}$/.test(i.listing_date || ''))
+    .map(i => ({ ipo: i, at: `${i.listing_date}T08:30:00+09:00` }))
+    .filter(x => Date.parse(x.at) > now)
+    .sort((a, b) => a.at.localeCompare(b.at) || a.ipo.no - b.ipo.no)
+    .map(({ ipo, at }) => {
+      const price = ipo.final_price ? ` 공모가 ${Number(ipo.final_price).toLocaleString('ko-KR')}원` : '';
+      const warn = ipo.warning === 'strong' ? '\n강한 하락 경고가 있어요.' : ipo.warning === 'warn' ? '\n하락 경고가 있어요.' : '';
+      return { id: ipo.no, at, title: `오늘 ${ipo.name} 상장`, body: `시초가 매도 준비.${price}${warn}`, no: ipo.no };
+    });
+}

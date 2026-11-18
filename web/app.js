@@ -1,9 +1,9 @@
-import { monthGrid, barsForMonth, badgeInfo, staleHours, readOpen, saveOpen, needsRefresh, warnText, recordRows, verdictInfo, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied } from './calendar.js';
+import { monthGrid, barsForMonth, badgeInfo, staleHours, readOpen, saveOpen, needsRefresh, warnText, recordRows, verdictInfo, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
 const loadedAt = Date.now();
-const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null, ledger: null, routed: false, applied: new Set(), canApply: false };
+const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null, ledger: null, routed: false, applied: new Set(), canApply: false, alarmOff: false };
 
 function h(tag, props, ...kids) {
   const el = document.createElement(tag);
@@ -130,14 +130,55 @@ function renderList() {
   $('list').replaceChildren(...parts);
 }
 
+// Listing-day alarm (Android app only; the notification plugin exists only in the native shell). Everything stays on the device.
+const notifier = () => (isNativeApp(window) ? window.Capacitor?.Plugins?.LocalNotifications : undefined);
+
+async function ensureAlarmPermission() {
+  const LN = notifier();
+  if (!LN) return true;
+  try {
+    let perm = await LN.checkPermissions();
+    if (perm.display !== 'granted' && perm.display !== 'denied') perm = await LN.requestPermissions();
+    state.alarmOff = perm.display !== 'granted';
+  } catch (e) { console.error(e); }
+  return !state.alarmOff;
+}
+
+// Schedule exactly the alarms listingAlarms() wants and cancel any other one this app had scheduled.
+async function syncListingAlarms() {
+  const LN = notifier();
+  if (!LN) return;
+  try {
+    const wanted = listingAlarms(state.ipos, state.applied, new Date().toISOString());
+    const pending = (await LN.getPending()).notifications || [];
+    const stale = pending.filter(n => !wanted.some(w => w.id === n.id));
+    if (stale.length) await LN.cancel({ notifications: stale.map(n => ({ id: n.id })) });
+    if (!wanted.length) return;
+    const perm = await LN.checkPermissions();
+    state.alarmOff = perm.display !== 'granted';
+    if (state.alarmOff) return;
+    // allowWhileIdle, not an exact alarm (isExactNotification defaults to true in the plugin, which would open the system
+    // "alarms & reminders" settings): it may arrive a few minutes late, but needs no special permission.
+    await LN.schedule({ notifications: wanted.map(w => ({ id: w.id, title: w.title, body: w.body, extra: { no: w.no }, isExactNotification: false, schedule: { at: new Date(w.at), allowWhileIdle: true } })) });
+  } catch (e) { console.error(e); }
+}
+
+function alarmNodes(ipo) {
+  if (!notifier() || !state.applied.has(ipo.no) || !ipo.listing_date || ipo.first_close != null) return [];
+  return [h('p', { class: 'p' }, state.alarmOff ? '알림이 꺼져 있어요' : '상장일 08:30에 알려드려요. 몇 분 늦을 수 있어요.')];
+}
+
 function appliedNodes(ipo) {
   if (!state.canApply) return [];
   const on = state.applied.has(ipo.no);
   return [h('button', {
     class: 'btn-small', type: 'button', 'aria-pressed': on ? 'true' : 'false',
-    onclick: () => {
+    onclick: async () => {
       state.applied = toggleApplied(state.applied, ipo.no);
       saveApplied(localStore(), state.applied);
+      renderDetail();
+      if (state.applied.has(ipo.no)) await ensureAlarmPermission();  // asked the first time a stock is marked
+      await syncListingAlarms();
       renderDetail();
     },
   }, on ? '신청 표시 취소' : '청약 신청했어요')];
@@ -184,6 +225,7 @@ function renderDetail() {
   const nodes = [h('div', { class: 'title-row' }, h('h3', {}, ipo.name), ...appliedNodes(ipo))];
   const chips = [ipo.market, ...(ipo.underwriters || [])].filter(Boolean);
   nodes.push(h('div', { class: 'chips' }, chips.map(c => h('span', { class: 'badge' }, c))));
+  nodes.push(...alarmNodes(ipo));
   nodes.push(...verdictNodes(ipo));
   nodes.push(kv('청약', `${md(ipo.sub_start)}~${md(ipo.sub_end)}`));
   nodes.push(...brokerNodes(ipo));
@@ -382,6 +424,11 @@ window.addEventListener('pageshow', reloadWhenStale);
 async function init() {
   $('prev').addEventListener('click', () => shift(-1));
   $('next').addEventListener('click', () => shift(1));
+  const LN = notifier();
+  if (LN) LN.addListener('localNotificationActionPerformed', ev => {
+    const no = ev.notification && ev.notification.extra && ev.notification.extra.no;
+    if (no) location.hash = String(no);
+  });
   state.canApply = appliedAvailable(localStore());
   state.applied = state.canApply ? readApplied(localStore()) : new Set();
   $('back').addEventListener('click', goBack);
@@ -408,6 +455,7 @@ async function init() {
   window.addEventListener('hashchange', route);
   window.addEventListener('popstate', route);
   route();
+  syncListingAlarms();
 }
 
 init();
