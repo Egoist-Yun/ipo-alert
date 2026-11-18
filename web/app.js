@@ -3,7 +3,7 @@ import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } 
 
 const $ = id => document.getElementById(id);
 const loadedAt = Date.now();
-const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null, ledger: null, listScroll: 0, applied: new Set(), canApply: false };
+const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null, ledger: null, routed: false, applied: new Set(), canApply: false };
 
 function h(tag, props, ...kids) {
   const el = document.createElement(tag);
@@ -44,7 +44,6 @@ const badgeText = ipo => badgeInfo(ipo).text;
 // Screens are chosen by the URL hash (#<no> detail, #record, none = list). Moves made inside the app push a history
 // entry marked {app: true}, so "← 달력" and the phone's back key return to the list exactly as it was left.
 function go(hash) {
-  state.listScroll = state.view === 'list' ? window.scrollY : state.listScroll;
   history.pushState({ app: true }, '', hash ? `#${hash}` : location.pathname + location.search);
   route();
 }
@@ -304,27 +303,60 @@ function render() {
   renderList();
 }
 
+// Detail / record open as a layer that slides in from the right over the list (push navigation) and slides back out.
+// The list stays rendered and scrolled where it was underneath, so going back needs no scroll bookkeeping.
+const reduceMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+let subToken = 0;
+
+function openSub(animate) {
+  const sub = $('v-sub');
+  subToken++;
+  sub.classList.remove('sub-in', 'sub-out');
+  sub.hidden = false;
+  sub.scrollTop = 0;
+  $('v-list').inert = true;
+  if (animate && !reduceMotion()) {
+    void sub.offsetWidth;  // restart the animation when the layer was already animating
+    sub.classList.add('sub-in');
+  }
+}
+
+function closeSub() {
+  const sub = $('v-sub');
+  if (sub.hidden) return;
+  const token = ++subToken;
+  $('v-list').inert = false;
+  if (reduceMotion()) { sub.hidden = true; return; }
+  sub.classList.remove('sub-in');
+  sub.classList.add('sub-out');
+  setTimeout(() => {
+    if (token !== subToken) return;  // opened again meanwhile
+    sub.hidden = true;
+    sub.classList.remove('sub-out');
+  }, 220);
+}
+
 function route() {
   const r = parseRoute(location.hash, state.ipos);
+  const wasOpen = state.view && state.view !== 'list';
   state.view = r.view;
   state.selected = r.view === 'detail' ? r.no : null;
-  $('v-list').hidden = r.view !== 'list';
-  $('v-sub').hidden = r.view === 'list';
   $('detail').hidden = r.view !== 'detail';
-  $('topbar-title').textContent = r.view === 'record' ? '실전 성적' : '공모주 상세정보';
   $('record').hidden = r.view !== 'record';
-  if (r.view === 'list') {
-    render();
-    window.scrollTo(0, state.listScroll);
-    return;
-  }
   const ipo = state.ipos.find(i => i.no === r.no);
   if (ipo && ipo.sub_start) {  // the list comes back on this stock's month
     state.year = Number(ipo.sub_start.slice(0, 4));
     state.month = Number(ipo.sub_start.slice(5, 7));
   }
-  if (r.view === 'detail') renderDetail(); else renderRecord();
-  window.scrollTo(0, 0);
+  render();  // keep the list current underneath (applied marks may have changed)
+  if (r.view === 'list') {
+    closeSub();
+  } else {
+    $('topbar-title').textContent = r.view === 'record' ? '실전 성적' : '공모주 상세정보';
+    if (r.view === 'detail') renderDetail(); else renderRecord();
+    openSub(state.routed && !wasOpen);
+  }
+  state.routed = true;
 }
 
 function shift(delta) {

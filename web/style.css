@@ -78,6 +78,14 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .back-btn::before { content: ''; position: absolute; left: 17px; top: 16px; width: 11px; height: 11px; border-left: 2px solid var(--foreground); border-bottom: 2px solid var(--foreground); transform: rotate(45deg); }
 .topbar-title { color: var(--foreground); font-size: 1.0625rem; font-weight: 600; line-height: 1.5; }
 #v-sub .panel { border-top: 0; }
+/* Push navigation: the sub-screen is a full-screen layer with its own scroll (flat, no shadow) that slides over the list. */
+#v-sub { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 2; overflow-y: auto; overscroll-behavior: contain; background: var(--canvas); }
+.sub-inner { max-width: 720px; margin: 0 auto; padding: calc(var(--space-xl) + var(--inset-top)) var(--space-lg) calc(var(--space-xxl) + var(--inset-bottom)); }
+.sub-in { animation: sub-in 250ms ease-out; }
+.sub-out { animation: sub-out 200ms ease-in forwards; }
+@keyframes sub-in { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes sub-out { from { transform: none; } to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .sub-in, .sub-out { animation: none; } }
 .detail { margin-top: var(--space-lg); }
 .title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-lg); }
 .title-row h3 { min-width: 0; }
