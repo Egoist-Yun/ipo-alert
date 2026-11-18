@@ -71,11 +71,13 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .badge.risk { background: var(--danger-weak); color: var(--danger); }
 .badge.wait { background: var(--surface); color: var(--body); }
 
-/* Sub-screen header: a back chevron and the screen's name (scrolls with the page, not fixed). */
-.topbar { display: flex; align-items: center; gap: var(--space-md); min-height: 48px; margin-left: calc(-1 * var(--space-md)); }
-.back-btn { position: relative; flex: none; width: 44px; height: 44px; }
+/* Sub-screen header: a back chevron and the screen's name, pinned to the top while the screen scrolls (extension: not in TDS).
+   Its top padding / negative margin keep the status-bar inset covered, so nothing shows through above it. */
+.topbar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: var(--space-md); min-height: calc(48px + var(--inset-top)); margin-top: calc(-1 * var(--inset-top)); padding-top: var(--inset-top); background: var(--canvas); border-bottom: 1px solid var(--border); }
+.back-btn { position: relative; flex: none; width: 44px; height: 44px; margin-left: calc(-1 * var(--space-md)); }
 .back-btn::before { content: ''; position: absolute; left: 17px; top: 16px; width: 11px; height: 11px; border-left: 2px solid var(--foreground); border-bottom: 2px solid var(--foreground); transform: rotate(45deg); }
 .topbar-title { color: var(--foreground); font-size: 1.0625rem; font-weight: 600; line-height: 1.5; }
+#v-sub .panel { border-top: 0; }
 .detail { margin-top: var(--space-lg); }
 .title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-lg); }
 .title-row h3 { min-width: 0; }
