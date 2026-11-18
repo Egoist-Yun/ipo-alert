@@ -29,7 +29,10 @@ button { font: inherit; color: inherit; border: 0; background: none; padding: 0;
 button:active, a.btn-medium:active { transform: scale(0.96); }
 button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--focus-inner), 0 0 0 3px var(--focus-outer); }
 
-.page { max-width: 720px; margin: 0 auto; padding: var(--space-xl) var(--space-lg) var(--space-xxl); }
+/* Edge-to-edge screens (the Android app, phones with a camera cut-out): keep content out from under the status bar / camera /
+   gesture bar. Browsers report the inset through env(); the Capacitor app injects --safe-area-inset-* instead. */
+:root { --inset-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px)); --inset-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px)); }
+.page { max-width: 720px; margin: 0 auto; padding: calc(var(--space-xl) + var(--inset-top)) var(--space-lg) calc(var(--space-xxl) + var(--inset-bottom)); }
 .head { margin-bottom: var(--space-lg); }
 .title { color: var(--foreground); font-size: 1.5rem; font-weight: 600; line-height: 1.5; }
 
