@@ -1,7 +1,8 @@
-import { monthGrid, barsForMonth, listForMonth, badgeInfo, staleHours, listTitle, readOpen, saveOpen } from './calendar.js';
+import { monthGrid, barsForMonth, listForMonth, badgeInfo, staleHours, listTitle, readOpen, saveOpen, needsRefresh } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
+const loadedAt = Date.now();
 const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null };
 
 function h(tag, props, ...kids) {
@@ -254,6 +255,13 @@ function shift(delta) {
   state.year = y; state.month = m;
   render();
 }
+
+// A kept-alive app (or a tab left in the background) would keep showing old data: reload when it comes back after 30+ minutes.
+function reloadWhenStale() {
+  if (document.visibilityState === 'visible' && needsRefresh(loadedAt, Date.now())) location.reload();
+}
+document.addEventListener('visibilitychange', reloadWhenStale);
+window.addEventListener('pageshow', reloadWhenStale);
 
 async function init() {
   $('prev').addEventListener('click', () => shift(-1));

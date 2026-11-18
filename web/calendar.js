@@ -78,3 +78,10 @@ export function saveOpen(storage, open) {
     storage?.setItem(OPEN_KEY, open ? '1' : '0');
   } catch (e) { /* storage can be blocked; the list still opens and closes */ }
 }
+
+export const REFRESH_AFTER_MS = 30 * 60 * 1000;
+
+export function needsRefresh(loadedAtMs, nowMs, afterMs = REFRESH_AFTER_MS) {
+  if (typeof loadedAtMs !== 'number' || nowMs < loadedAtMs) return false;
+  return nowMs - loadedAtMs >= afterMs;
+}

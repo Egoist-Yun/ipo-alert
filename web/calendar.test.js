@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { monthGrid, barsForMonth, listForMonth, listTitle, readOpen, saveOpen } from './calendar.js';
+import { monthGrid, barsForMonth, listForMonth, listTitle, readOpen, saveOpen, needsRefresh } from './calendar.js';
 
 const A = { no: 77, name: 'A', sub_start: '2026-11-27', sub_end: '2026-11-30', flag_count: 2, is_spac: false };
 
@@ -97,4 +97,18 @@ test('open state: default open, remembered, and safe when storage is broken', ()
   assert.equal(readOpen(broken), true);
   assert.doesNotThrow(() => saveOpen(broken, false));
   assert.equal(readOpen(undefined), true);
+});
+
+test('needsRefresh: only after the page has been loaded for 30 minutes or more', () => {
+  const t0 = Date.parse('2026-11-18T10:00:00+09:00');
+  assert.equal(needsRefresh(t0, t0 + 29 * 60 * 1000), false);
+  assert.equal(needsRefresh(t0, t0 + 30 * 60 * 1000), true);
+  assert.equal(needsRefresh(t0, t0 + 6 * 3600 * 1000), true);
+});
+
+test('needsRefresh: unknown load time or a clock that went backwards never loops reloads', () => {
+  const now = Date.parse('2026-11-18T10:00:00+09:00');
+  assert.equal(needsRefresh(null, now), false);
+  assert.equal(needsRefresh(undefined, now), false);
+  assert.equal(needsRefresh(now + 5000, now), false);
 });
