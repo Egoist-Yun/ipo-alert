@@ -112,9 +112,10 @@ function listRow(ipo, { big, applied } = {}) {
 function renderList() {
   const g = groupForList(state.ipos, state.year, state.month, kstToday(), state.applied);
   const parts = [];
-  // The applied group sits above the calendar: it is the first thing seen, whatever month is shown.
-  $('applied').replaceChildren(...(g.applied.length
-    ? [h('h4', {}, `신청한 청약 · ${g.applied.length}개`), ...g.applied.map(i => listRow(i, { big: true }))] : []));
+  // The applied group is the first of the list (just below the calendar), whatever month is shown.
+  if (g.applied.length) {
+    parts.push(h('section', { class: 'group' }, h('h4', {}, `신청한 청약 · ${g.applied.length}개`), g.applied.map(i => listRow(i, { big: true }))));
+  }
   if (g.upcoming.length) {
     parts.push(h('section', { class: 'group' }, h('h4', {}, `청약 예정·진행 중 · ${g.upcoming.length}개`), g.upcoming.map(i => listRow(i))));
   }

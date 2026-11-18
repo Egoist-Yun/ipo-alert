@@ -53,10 +53,8 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .bar.selected { outline: 2px solid var(--primary); outline-offset: -2px; }
 
 .list { margin-top: var(--space-xl); }
-.applied:empty { display: none; }
-.applied { margin-bottom: var(--space-xl); }
 .group { margin-bottom: var(--space-xl); }
-.applied > h4, .group > h4 { margin-bottom: var(--space-md); color: var(--foreground); font-size: 1.0625rem; font-weight: 700; }
+.group > h4 { margin-bottom: var(--space-md); color: var(--foreground); font-size: 1.0625rem; font-weight: 700; }
 .drop > summary { display: flex; align-items: center; justify-content: space-between; min-height: 48px; padding: var(--space-md) 0; border-top: 1px solid var(--border); color: var(--foreground); font-size: 1rem; font-weight: 600; cursor: pointer; list-style: none; }
 .drop > summary::-webkit-details-marker { display: none; }
 .drop > summary::after { content: '▾'; color: var(--muted); }
