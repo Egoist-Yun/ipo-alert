@@ -102,8 +102,9 @@ function localStore() {
 function listRow(ipo, { big, applied } = {}) {
   const sub = `청약 ${md(ipo.sub_start)}~${md(ipo.sub_end)}`;
   const listed = ipo.first_close != null;
-  const meta = big ? `${ipo.name} · ${sub}` : (listed || !ipo.listing_date ? sub : `${sub} · ${listingLabel(ipo)}`);
-  const title = big ? `${listingLabel(ipo)} · 시초가 매도` : `${applied ? '✓ ' : ''}${ipo.name}`;
+  // Applied rows: the stock name leads, the sell day (listing date) is the second line; the subscription period is left out.
+  const meta = big ? `${listingLabel(ipo)} · 시초가 매도` : (listed || !ipo.listing_date ? sub : `${sub} · ${listingLabel(ipo)}`);
+  const title = `${applied ? '✓ ' : ''}${ipo.name}`;
   return h('button', { class: 'row', type: 'button', onclick: () => select(ipo.no) },
     h('span', {}, h('span', { class: `name${big ? ' big' : ''}` }, title), h('span', { class: 'meta' }, meta)),
     h('span', { class: `badge ${tone(ipo)}` }, badgeText(ipo)));
