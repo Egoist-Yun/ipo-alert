@@ -63,10 +63,6 @@ export function staleHours(updatedAt, nowMs) {
   return Number.isNaN(t) ? null : Math.floor((nowMs - t) / 3600000);
 }
 
-export function listTitle(year, month, count) {
-  return `${month}월 청약 목록 · ${count ? `${count}개` : '없음'}`;
-}
-
 const OPEN_KEY = 'ipo.listOpen';
 
 export function readOpen(storage) {
@@ -148,4 +144,56 @@ export function parseRoute(hash, ipos) {
     if ((ipos || []).some(i => i.no === no)) return { view: 'detail', no };
   }
   return { view: 'list', no: null };
+}
+
+// The list screen's groups. `applied` (the user marked a subscription and the stock has not listed yet) ignores the shown month.
+// `upcoming` = shown month, not applied, subscription not over; `done` = shown month, subscription over or already listed.
+// The data has no closing time, so on the deadline day itself (sub_end === today) a stock still counts as running.
+export function groupForList(ipos, year, month, todayIso, applied) {
+  const waiting = i => applied.has(i.no) && i.first_close == null;
+  const running = i => i.first_close == null && i.sub_end >= todayIso;
+  const mine = ipos.filter(waiting)
+    .sort((a, b) => (a.listing_date || '9999').localeCompare(b.listing_date || '9999') || a.no - b.no);
+  const rest = listForMonth(ipos, year, month).filter(i => !waiting(i));
+  return {
+    applied: mine,
+    upcoming: rest.filter(running),
+    done: rest.filter(i => !running(i)).sort((a, b) => b.sub_end.localeCompare(a.sub_end) || b.no - a.no),
+  };
+}
+
+export function listingLabel(ipo) {
+  return ipo.listing_date ? `${Number(ipo.listing_date.slice(5, 7))}/${Number(ipo.listing_date.slice(8, 10))} 상장` : '상장일 미정';
+}
+
+// Which subscriptions the user applied for: kept only on this device (never sent anywhere: the repository is public).
+const APPLIED_KEY = 'ipo-applied';
+
+export function readApplied(storage) {
+  try {
+    const list = JSON.parse(storage.getItem(APPLIED_KEY));
+    return new Set(Array.isArray(list) ? list.filter(Number.isInteger) : []);
+  } catch (e) {
+    return new Set();
+  }
+}
+
+export function saveApplied(storage, set) {
+  try { storage.setItem(APPLIED_KEY, JSON.stringify([...set].sort((a, b) => a - b))); } catch (e) { /* storage blocked: marking is off */ }
+}
+
+export function appliedAvailable(storage) {
+  try {
+    storage.setItem('ipo-storage-check', '1');
+    storage.removeItem('ipo-storage-check');
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+export function toggleApplied(set, no) {
+  const next = new Set(set);
+  if (!next.delete(no)) next.add(no);
+  return next;
 }

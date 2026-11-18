@@ -1,9 +1,9 @@
-import { monthGrid, barsForMonth, listForMonth, badgeInfo, staleHours, listTitle, readOpen, saveOpen, needsRefresh, warnText, recordRows, verdictInfo, parseRoute } from './calendar.js';
+import { monthGrid, barsForMonth, badgeInfo, staleHours, readOpen, saveOpen, needsRefresh, warnText, recordRows, verdictInfo, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
 const loadedAt = Date.now();
-const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null, ledger: null, listScroll: 0 };
+const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null, ledger: null, listScroll: 0, applied: new Set(), canApply: false };
 
 function h(tag, props, ...kids) {
   const el = document.createElement(tag);
@@ -80,12 +80,13 @@ function renderCalendar() {
       if (lane < 0) { lane = laneEnd.length; laneEnd.push(-1); }
       laneEnd[lane] = seg.c1;
       const ipo = state.ipos.find(i => i.no === seg.b.no);
-      const label = `${seg.b.name} ${badgeText(ipo)}`;
+      const mark = state.applied.has(ipo.no) ? '✓ ' : '';
+      const label = `${mark}${seg.b.name} ${badgeText(ipo)}`;
       const bar = h('button', {
         class: `bar ${tone(ipo)}${state.selected === seg.b.no ? ' selected' : ''}`,
         type: 'button',
         style: `grid-column:${seg.c0 + 1} / ${seg.c1 + 2};grid-row:${lane + 2}`,
-        'aria-label': `${seg.b.name}, ${badgeText(ipo)}, 청약 ${md(ipo.sub_start)}~${md(ipo.sub_end)}`,
+        'aria-label': `${state.applied.has(ipo.no) ? '청약 신청함, ' : ''}${seg.b.name}, ${badgeText(ipo)}, 청약 ${md(ipo.sub_start)}~${md(ipo.sub_end)}`,
         onclick: () => select(seg.b.no),
       }, label);
       el.append(bar);
@@ -98,21 +99,47 @@ function localStore() {
   try { return window.localStorage; } catch (e) { return undefined; }
 }
 
+function listRow(ipo, { big, applied } = {}) {
+  const sub = `청약 ${md(ipo.sub_start)}~${md(ipo.sub_end)}`;
+  const listed = ipo.first_close != null;
+  const meta = big ? `${ipo.name} · ${sub}` : (listed || !ipo.listing_date ? sub : `${sub} · ${listingLabel(ipo)}`);
+  const title = big ? `${listingLabel(ipo)} · 시초가 매도` : `${applied ? '✓ ' : ''}${ipo.name}`;
+  return h('button', { class: 'row', type: 'button', onclick: () => select(ipo.no) },
+    h('span', {}, h('span', { class: `name${big ? ' big' : ''}` }, title), h('span', { class: 'meta' }, meta)),
+    h('span', { class: `badge ${tone(ipo)}` }, badgeText(ipo)));
+}
+
 function renderList() {
-  const items = listForMonth(state.ipos, state.year, state.month);
-  const rows = items.map(ipo => {
-    const cls = tone(ipo);
-    return h('button', { class: 'row', type: 'button', onclick: () => select(ipo.no) },
-      h('span', {},
-        h('span', { class: 'name' }, ipo.name),
-        h('span', { class: 'meta' }, `청약 ${md(ipo.sub_start)}~${md(ipo.sub_end)}`)),
-      h('span', { class: `badge ${cls}` }, badgeText(ipo)));
-  });
-  const box = h('details', { class: 'drop', open: readOpen(localStore()) },
-    h('summary', {}, h('span', {}, listTitle(state.year, state.month, items.length))),
-    rows);
-  box.addEventListener('toggle', () => saveOpen(localStore(), box.open));
-  $('list').replaceChildren(box);
+  const g = groupForList(state.ipos, state.year, state.month, kstToday(), state.applied);
+  const parts = [];
+  // The applied group sits above the calendar: it is the first thing seen, whatever month is shown.
+  $('applied').replaceChildren(...(g.applied.length
+    ? [h('h4', {}, `신청한 청약 · ${g.applied.length}개`), ...g.applied.map(i => listRow(i, { big: true }))] : []));
+  if (g.upcoming.length) {
+    parts.push(h('section', { class: 'group' }, h('h4', {}, `청약 예정·진행 중 · ${g.upcoming.length}개`), g.upcoming.map(i => listRow(i))));
+  }
+  if (g.done.length) {
+    const box = h('details', { class: 'drop', open: readOpen(localStore()) },
+      h('summary', {}, h('span', {}, `청약 끝 · ${g.done.length}개`)),
+      g.done.map(i => listRow(i, { applied: state.applied.has(i.no) })));
+    box.addEventListener('toggle', () => saveOpen(localStore(), box.open));
+    parts.push(box);
+  }
+  if (!g.upcoming.length && !g.done.length) parts.push(h('p', { class: 'msg' }, `${state.month}월에는 청약이 없어요.`));
+  $('list').replaceChildren(...parts);
+}
+
+function appliedNodes(ipo) {
+  if (!state.canApply) return [];
+  const on = state.applied.has(ipo.no);
+  return [h('button', {
+    class: 'btn-medium', type: 'button', 'aria-pressed': on ? 'true' : 'false',
+    onclick: () => {
+      state.applied = toggleApplied(state.applied, ipo.no);
+      saveApplied(localStore(), state.applied);
+      renderDetail();
+    },
+  }, on ? '신청 표시 취소' : '청약 신청했어요')];
 }
 
 function brokerNodes(ipo) {
@@ -160,6 +187,7 @@ function renderDetail() {
   nodes.push(kv('청약', `${md(ipo.sub_start)}~${md(ipo.sub_end)}`));
   nodes.push(...brokerNodes(ipo));
   if (ipo.listing_date) nodes.push(kv('상장', md(ipo.listing_date)));
+  nodes.push(...appliedNodes(ipo));
 
   if (!ipo.is_spac && ipo.inst_competition != null) {
     const unknown = ipo.unknown_count ? ` · 확인 불가 ${ipo.unknown_count}개` : '';
@@ -314,6 +342,8 @@ window.addEventListener('pageshow', reloadWhenStale);
 async function init() {
   $('prev').addEventListener('click', () => shift(-1));
   $('next').addEventListener('click', () => shift(1));
+  state.canApply = appliedAvailable(localStore());
+  state.applied = state.canApply ? readApplied(localStore()) : new Set();
   $('back').addEventListener('click', goBack);
   $('record-link').addEventListener('click', ev => { ev.preventDefault(); go('record'); });
   const today = kstToday();

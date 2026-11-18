@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { monthGrid, barsForMonth, listForMonth, listTitle, readOpen, saveOpen, needsRefresh } from './calendar.js';
+import { monthGrid, barsForMonth, listForMonth, readOpen, saveOpen, needsRefresh } from './calendar.js';
 
 const A = { no: 77, name: 'A', sub_start: '2026-11-27', sub_end: '2026-11-30', flag_count: 2, is_spac: false };
 
@@ -78,11 +78,6 @@ test('badgeInfo: after subscription the open-price judgment replaces the pre-sub
 test('badgeInfo: warning level from the data wins', () => {
   assert.deepEqual(badgeInfo({ ...base, warning: 'strong' }), { text: '강한 하락 경고', tone: 'risk' });
   assert.deepEqual(badgeInfo({ ...base, warning: 'warn', prediction: { prob: { warn: true } } }), { text: '하락 경고', tone: 'risk' });
-});
-
-test('listTitle names the month and counts the stocks', () => {
-  assert.equal(listTitle(2026, 11, 13), '11월 청약 목록 · 13개');
-  assert.equal(listTitle(2026, 12, 0), '12월 청약 목록 · 없음');
 });
 
 test('open state: default open, remembered, and safe when storage is broken', () => {
@@ -214,4 +209,100 @@ test('parseRoute: malformed values never open a detail', () => {
   }
   assert.deepEqual(parseRoute(undefined, stocks), { view: 'list', no: null });
   assert.deepEqual(parseRoute(null, null), { view: 'list', no: null });
+});
+
+import { groupForList, readApplied, saveApplied, appliedAvailable, toggleApplied, listingLabel } from './calendar.js';
+
+const TODAY = '2026-11-18';
+const mk = (no, sub_start, sub_end, extra = {}) => ({ no, name: `S${no}`, sub_start, sub_end, listing_date: null, ...extra });
+const SET = [
+  mk(1, '2026-11-16', '2026-11-17', { listing_date: '2026-11-26' }),                         // applied, not listed
+  mk(2, '2026-11-02', '2026-11-03', { listing_date: '2026-11-10', first_close: 12000, final_price: 10000 }), // applied, listed
+  mk(3, '2026-11-16', '2026-11-17', { listing_date: '2026-11-26' }),                         // not applied, closed, not listed
+  mk(4, '2026-11-18', '2026-11-19'),                                                          // deadline is today
+  mk(5, '2026-11-25', '2026-11-26'),
+  mk(6, '2026-11-27', '2026-11-30', { is_spac: true }),
+  mk(7, '2026-11-30', '2026-12-02'),                                                          // spans two months
+  mk(8, '2026-11-25', '2026-11-26', { listing_date: '2026-12-03' }),                         // applied, still open
+];
+const nos = list => list.map(i => i.no);
+const APPLIED = new Set([1, 2, 8]);
+
+test('groupForList: applied and not yet listed come first, whatever month is shown, by listing date', () => {
+  assert.deepEqual(nos(groupForList(SET, 2026, 11, TODAY, APPLIED).applied), [1, 8]);
+  assert.deepEqual(nos(groupForList(SET, 2026, 12, TODAY, APPLIED).applied), [1, 8]);
+  assert.deepEqual(nos(groupForList(SET, 2027, 3, TODAY, APPLIED).applied), [1, 8]);
+});
+
+test('groupForList: an applied stock that already listed belongs to the finished group', () => {
+  const g = groupForList(SET, 2026, 11, TODAY, APPLIED);
+  assert.ok(nos(g.done).includes(2) && !nos(g.applied).includes(2));
+});
+
+test('groupForList: a closed, unlisted stock that was not applied for is finished; the deadline day is still upcoming', () => {
+  const g = groupForList(SET, 2026, 11, TODAY, APPLIED);
+  assert.ok(nos(g.done).includes(3));
+  assert.ok(nos(g.upcoming).includes(4));  // sub_end === today: no closing time in the data, so it counts as running
+});
+
+test('groupForList: upcoming is sorted by subscription start, spacs included, applied stocks excluded', () => {
+  assert.deepEqual(nos(groupForList(SET, 2026, 11, TODAY, APPLIED).upcoming), [4, 5, 6, 7]);
+});
+
+test('groupForList: finished is most recent first', () => {
+  assert.deepEqual(nos(groupForList(SET, 2026, 11, TODAY, APPLIED).done), [3, 2]);
+});
+
+test('groupForList: a stock spanning two months shows in both months', () => {
+  assert.ok(nos(groupForList(SET, 2026, 12, TODAY, APPLIED).upcoming).includes(7));
+  assert.deepEqual(nos(groupForList(SET, 2026, 12, TODAY, APPLIED).done), []);
+});
+
+test('groupForList: empty groups are empty arrays; applied without a listing date goes last', () => {
+  assert.deepEqual(groupForList([], 2026, 11, TODAY, new Set()), { applied: [], upcoming: [], done: [] });
+  const g = groupForList([mk(9, '2026-11-16', '2026-11-17'), mk(1, '2026-11-16', '2026-11-17', { listing_date: '2026-11-26' })], 2026, 11, TODAY, new Set([9, 1]));
+  assert.deepEqual(nos(g.applied), [1, 9]);
+  assert.deepEqual(groupForList([{ no: 1, name: 'x' }], 2026, 11, TODAY, new Set()).upcoming, []);
+});
+
+function memStore() {
+  const mem = new Map();
+  return { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, String(v)), removeItem: k => mem.delete(k) };
+}
+const broken = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); }, removeItem() { throw new Error('blocked'); } };
+
+test('applied storage: empty by default, round trip, junk and blocked storage are safe', () => {
+  const s = memStore();
+  assert.deepEqual([...readApplied(s)], []);
+  saveApplied(s, new Set([5, 3]));
+  assert.deepEqual([...readApplied(s)].sort(), [3, 5]);
+  s.setItem('ipo-applied', '{not json');
+  assert.deepEqual([...readApplied(s)], []);
+  s.setItem('ipo-applied', '{"a":1}');
+  assert.deepEqual([...readApplied(s)], []);
+  s.setItem('ipo-applied', '[1,"x",null,2.5,7]');
+  assert.deepEqual([...readApplied(s)], [1, 7]);
+  assert.deepEqual([...readApplied(broken)], []);
+  assert.deepEqual([...readApplied(undefined)], []);
+  assert.doesNotThrow(() => saveApplied(broken, new Set([1])));
+});
+
+test('appliedAvailable: only when the storage really works', () => {
+  assert.equal(appliedAvailable(memStore()), true);
+  assert.equal(appliedAvailable(broken), false);
+  assert.equal(appliedAvailable(undefined), false);
+});
+
+test('toggleApplied adds and removes without touching the original', () => {
+  const a = new Set([1]);
+  const b = toggleApplied(a, 2);
+  assert.deepEqual([...a], [1]);
+  assert.deepEqual([...b].sort(), [1, 2]);
+  assert.deepEqual([...toggleApplied(b, 1)], [2]);
+});
+
+test('listingLabel: the sell day, or unknown', () => {
+  assert.equal(listingLabel({ listing_date: '2026-11-26' }), '11/26 상장');
+  assert.equal(listingLabel({ listing_date: '2026-12-03' }), '12/3 상장');
+  assert.equal(listingLabel({}), '상장일 미정');
 });
