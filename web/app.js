@@ -311,6 +311,7 @@ function route() {
   $('v-list').hidden = r.view !== 'list';
   $('v-sub').hidden = r.view === 'list';
   $('detail').hidden = r.view !== 'detail';
+  $('topbar-title').textContent = r.view === 'record' ? '실전 성적' : '공모주 상세정보';
   $('record').hidden = r.view !== 'record';
   if (r.view === 'list') {
     render();

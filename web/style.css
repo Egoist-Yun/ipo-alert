@@ -71,6 +71,11 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .badge.risk { background: var(--danger-weak); color: var(--danger); }
 .badge.wait { background: var(--surface); color: var(--body); }
 
+/* Sub-screen header: a back chevron and the screen's name (scrolls with the page, not fixed). */
+.topbar { display: flex; align-items: center; gap: var(--space-md); min-height: 48px; margin-left: calc(-1 * var(--space-md)); }
+.back-btn { position: relative; flex: none; width: 44px; height: 44px; }
+.back-btn::before { content: ''; position: absolute; left: 17px; top: 16px; width: 11px; height: 11px; border-left: 2px solid var(--foreground); border-bottom: 2px solid var(--foreground); transform: rotate(45deg); }
+.topbar-title { color: var(--foreground); font-size: 1.0625rem; font-weight: 600; line-height: 1.5; }
 .detail { margin-top: var(--space-lg); }
 .title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-lg); }
 .title-row h3 { min-width: 0; }
