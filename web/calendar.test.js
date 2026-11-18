@@ -148,3 +148,39 @@ test('recordRows: nothing saved yet, or no ledger at all', () => {
 test('recordRows: enough declines drops the too-early note', () => {
   assert.equal(recordRows({ since: 'x', pre: model({ n_down: 10, early: false }), post: model({ saved: 0, early: false }) }).early, false);
 });
+
+import { verdictInfo } from './calendar.js';
+
+test('badgeInfo: a listed stock shows its actual first-day return', () => {
+  assert.deepEqual(badgeInfo({ ...base, first_close: 6000, final_price: 10000, flag_count: 3 }), { text: '-40%', tone: 'risk' });
+  assert.deepEqual(badgeInfo({ ...base, first_close: 16500, final_price: 10000 }), { text: '+65%', tone: '' });
+  assert.deepEqual(badgeInfo({ ...base, first_close: 10000, final_price: 10000 }), { text: '+0%', tone: '' });
+});
+
+const waiting = { ...base, inst_competition: null };
+const counts = { warned: 15, caught: 10, n_down: 18, strong_warned: 10, strong_caught: 7 };
+
+test('verdictInfo: strong warning names the counts behind it', () => {
+  const ipo = { ...base, flag_count: 3, warning: 'strong', prediction: { prob: counts } };
+  assert.deepEqual(verdictInfo(ipo), { text: '강한 하락 경고 · 경고 10개 중 7개 적중', tone: 'risk' });
+});
+
+test('verdictInfo: after the subscription the open-price judgment supplies the counts', () => {
+  const ipo = { ...base, warning: 'warn', prediction: { prob: counts, open_down: { warned: 16, caught: 10, n_down: 12 } } };
+  assert.deepEqual(verdictInfo(ipo), { text: '하락 경고 · 경고 16개 중 10개 적중', tone: 'risk' });
+});
+
+test('verdictInfo: a warning without counts (older data) is still stated', () => {
+  assert.deepEqual(verdictInfo({ ...base, warning: 'warn', prediction: { prob: {} } }), { text: '하락 경고', tone: 'risk' });
+});
+
+test('verdictInfo: no warning says so and keeps unknowns visible', () => {
+  assert.deepEqual(verdictInfo({ ...base, flag_count: 1 }), { text: '하락 경고 없음', tone: '' });
+  assert.deepEqual(verdictInfo({ ...base, unknown_count: 2 }), { text: '하락 경고 없음 · 확인 불가 2개', tone: '' });
+});
+
+test('verdictInfo: waiting, spac and listed stocks have no verdict line', () => {
+  assert.deepEqual(verdictInfo(waiting), { text: '기관 수요예측 결과가 아직 없어요.', tone: 'wait' });
+  assert.equal(verdictInfo({ ...base, is_spac: true }), null);
+  assert.equal(verdictInfo({ ...base, first_close: 9000, final_price: 10000 }), null);
+});

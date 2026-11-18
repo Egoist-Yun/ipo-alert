@@ -1,4 +1,4 @@
-import { monthGrid, barsForMonth, listForMonth, badgeInfo, staleHours, listTitle, readOpen, saveOpen, needsRefresh, warnText, recordRows } from './calendar.js';
+import { monthGrid, barsForMonth, listForMonth, badgeInfo, staleHours, listTitle, readOpen, saveOpen, needsRefresh, warnText, recordRows, verdictInfo } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
@@ -99,10 +99,10 @@ function renderList() {
         h('span', { class: 'meta' }, `청약 ${md(ipo.sub_start)}~${md(ipo.sub_end)}`)),
       h('span', { class: `badge ${cls}` }, badgeText(ipo)));
   });
-  const box = h('details', { class: 'drop', open: readOpen(localStore()) },
+  const box = h('details', { class: 'drop', open: state.selected == null ? readOpen(localStore()) : false },
     h('summary', {}, h('span', {}, listTitle(state.year, state.month, items.length))),
     rows);
-  box.addEventListener('toggle', () => saveOpen(localStore(), box.open));
+  box.addEventListener('toggle', () => { if (state.selected == null) saveOpen(localStore(), box.open); });
   $('list').replaceChildren(box);
 }
 
@@ -147,25 +147,37 @@ function renderDetail() {
   const nodes = [h('h3', {}, ipo.name)];
   const chips = [ipo.market, ...(ipo.underwriters || [])].filter(Boolean);
   nodes.push(h('div', { class: 'chips' }, chips.map(c => h('span', { class: 'badge' }, c))));
+  nodes.push(...verdictNodes(ipo));
   nodes.push(kv('청약', `${md(ipo.sub_start)}~${md(ipo.sub_end)}`));
   nodes.push(...brokerNodes(ipo));
   if (ipo.listing_date) nodes.push(kv('상장', md(ipo.listing_date)));
 
-  if (ipo.is_spac) {
-  } else if (ipo.inst_competition == null) {
-    nodes.push(h('p', { class: 'summary' }, '기관 수요예측 결과가 아직 없어요.'));
-  } else {
+  if (!ipo.is_spac && ipo.inst_competition != null) {
     const unknown = ipo.unknown_count ? ` · 확인 불가 ${ipo.unknown_count}개` : '';
-    nodes.push(h('p', { class: 'summary' }, (ipo.flag_count ? `위험 신호 ${ipo.flag_count}개` : '위험 신호 없음') + unknown));
-    nodes.push(h('h4', {}, '위험 신호'));
+    nodes.push(h('h4', {}, (ipo.flag_count ? `위험 신호 ${ipo.flag_count}개` : '위험 신호 없음') + unknown));
     for (const s of ipo.signals) {
       nodes.push(kv(s.label, (s.flag ? '⚠ ' : '') + valueText(s), s.flag === true ? 'flag' : s.flag === null ? 'unknown' : ''));
     }
     nodes.push(...patternNodes(ipo));
-    nodes.push(...(ipo.first_close != null ? resultNodes(ipo) : predictionNodes(ipo)));
+    if (ipo.first_close == null) nodes.push(...probabilityNodes(ipo), ...referenceNodes(ipo));
   }
   if (ipo.url) nodes.push(h('a', { class: 'btn-medium', href: ipo.url, target: '_blank', rel: 'noopener' }, '원문 보기'));
   box.replaceChildren(h('div', { class: 'panel' }, nodes));
+}
+
+// The conclusion comes first: the warning (or the actual result once listed). Prices are only a side reference.
+function verdictNodes(ipo) {
+  if (ipo.first_close != null) return resultNodes(ipo);
+  const v = verdictInfo(ipo);
+  if (!v) return [];
+  const nodes = [h('p', { class: `summary${v.tone === 'risk' ? ' warn' : ''}` }, v.text)];
+  if (ipo.warning) {
+    const p = ipo.prediction || {};
+    const wt = warnText(p.open_down || p.prob || {}, ipo.warning === 'strong');
+    if (wt) nodes.push(kv('과거 검증', wt));
+    nodes.push(h('p', { class: 'p' }, '경고는 손실을 피하기 위한 용도예요. 건너뛴다고 평균 수익이 오르는 건 아니에요.'));
+  }
+  return nodes;
 }
 
 function patternNodes(ipo) {
@@ -193,55 +205,49 @@ function resultNodes(ipo) {
   return nodes;
 }
 
-function predictionNodes(ipo) {
+function probabilityNodes(ipo) {
   const p = ipo.prediction;
   if (!p || (!p.knn && !p.open && !p.close && !p.prob && !p.open_down)) {
     const why = p && p.accuracy
       ? '과거 기록으로 검증했을 때 기준보다 정확하지 않아서 보여주지 않아요.'
       : '비교할 과거 기록이 아직 부족해요.';
-    return [h('h4', {}, '첫날 가격 예측'), h('p', { class: 'p' }, `예측을 만들지 못했어요. ${why}`)];
+    return [h('p', { class: 'p' }, `예측을 만들지 못했어요. ${why}`)];
   }
   const nodes = [];
-  const acc = p.accuracy || {};
-  if (ipo.warning) {
-    const w = p.open_down || p.prob || {};
-    const strong = ipo.warning === 'strong';
-    nodes.push(h('p', { class: 'summary warn' }, strong ? '강한 하락 경고' : '하락 경고'));
-    const wt = warnText(w, strong);
-    if (wt) nodes.push(kv('과거 검증', wt));
-    nodes.push(h('p', { class: 'p' }, '경고는 손실을 피하기 위한 용도예요. 건너뛴다고 평균 수익이 오르는 건 아니에요.'));
-  }
-  if (p.conflict) {
-    nodes.push(h('p', { class: 'summary' }, ipo.warning ? '가격 예측은 상승이지만, 하락을 미리 잡는 데는 과거에 경고가 가격 예측보다 정확했어요.' : '신호와 예측이 엇갈려요. 두 가지를 함께 보세요.'));
-  }
-  if (p.open || p.close) {
-    nodes.push(h('h4', {}, '가격 예측'));
-    for (const [key, label] of [['open', '시초가 예상'], ['close', '첫날 종가 예상']]) {
-      const e = p[key];
-      if (!e) continue;
-      nodes.push(kv(`${label}${e.uses_retail ? ' · 일반청약 반영' : ''} (±${(e.mae * 100).toFixed(0)}%p)`, `${won(e.price)} (${pct(e.return)})`, e.return < 0 ? 'flag' : ''));
-      if (e.price_low != null) nodes.push(kv(`범위 · 과거 ${(e.range_coverage * 100).toFixed(0)}% 적중`, `${won(e.price_low)} ~ ${won(e.price_high)}`));
-    }
+  if (p.prob) {
+    nodes.push(h('h4', {}, '청약 전 모델: 공모가 아래로 끝날 확률'));
+    nodes.push(kv('첫날 종가 기준', `${(p.prob.p_down * 100).toFixed(0)}%`, p.prob.warn ? 'flag' : ''));
   }
   if (p.open_down) {
-    const o = p.open_down;
     nodes.push(h('h4', {}, '청약 마감 후 참고: 시초가가 공모가 아래일 확률'));
-    nodes.push(kv('일반청약 경쟁률 반영', `${(o.p_down * 100).toFixed(0)}%`, o.warn ? 'flag' : ''));
+    nodes.push(kv('일반청약 경쟁률 반영', `${(p.open_down.p_down * 100).toFixed(0)}%`, p.open_down.warn ? 'flag' : ''));
   }
-  if (p.prob) {
-    const q = p.prob;
-    nodes.push(h('h4', {}, '공모가 아래로 끝날 확률'));
-    nodes.push(kv('첫날 종가 기준', `${(q.p_down * 100).toFixed(0)}%`, q.warn ? 'flag' : ''));
+  return nodes;
+}
+
+function referenceNodes(ipo) {
+  const p = ipo.prediction;
+  if (!p || (!p.open && !p.close && !p.knn)) return [];
+  const inner = [];
+  if (p.conflict) {
+    inner.push(h('p', { class: 'p' }, ipo.warning ? '가격 예측은 상승이지만, 하락을 미리 잡는 데는 과거에 경고가 가격 예측보다 정확했어요.' : '신호와 예측이 엇갈려요. 두 가지를 함께 보세요.'));
+  }
+  for (const [key, label] of [['open', '시초가 예상'], ['close', '첫날 종가 예상']]) {
+    const e = p[key];
+    if (!e) continue;
+    inner.push(kv(`${label}${e.uses_retail ? ' · 일반청약 반영' : ''} (±${(e.mae * 100).toFixed(0)}%p)`, `${won(e.price)} (${pct(e.return)})`, e.return < 0 ? 'flag' : ''));
+    if (e.price_low != null) inner.push(kv(`범위 · 과거 ${(e.range_coverage * 100).toFixed(0)}% 적중`, `${won(e.price_low)} ~ ${won(e.price_high)}`));
   }
   if (p.knn) {
     const k = p.knn;
-    nodes.push(h('h4', {}, '비슷했던 과거 공모주'));
-    nodes.push(h('p', { class: 'p' }, `${k.n}개 중 ${k.down_count}개가 첫날 공모가 아래로 마감했어요.`));
-    nodes.push(kv('비슷한 종목의 가운데 절반 범위', `${won(k.price_low)} ~ ${won(k.price_high)}`));
-    nodes.push(kv('가운데 값', pct(k.median)));
-    for (const it of k.items) nodes.push(kv(it.name, pct(it.return)));
+    inner.push(h('p', { class: 'p' }, `비슷했던 과거 공모주 ${k.n}개 중 ${k.down_count}개가 첫날 공모가 아래로 마감했어요.`));
+    inner.push(kv('비슷한 종목의 가운데 절반 범위', `${won(k.price_low)} ~ ${won(k.price_high)}`));
+    inner.push(kv('가운데 값', pct(k.median)));
+    for (const it of k.items) inner.push(kv(it.name, pct(it.return)));
   }
-  return nodes;
+  const e = p.open || p.close;
+  const title = e ? `참고: 가격 예측 (오차 ±${(e.mae * 100).toFixed(0)}%p)` : '참고: 비슷했던 과거 공모주';
+  return [h('details', { class: 'drop' }, h('summary', {}, h('span', {}, title)), inner)];
 }
 
 function renderRecord(ledger) {
@@ -274,6 +280,20 @@ function reloadWhenStale() {
 document.addEventListener('visibilitychange', reloadWhenStale);
 window.addEventListener('pageshow', reloadWhenStale);
 
+// A notification link (#<stock no>) selects that stock, opens its detail and scrolls to it.
+function selectFromHash() {
+  const hit = state.ipos.find(i => i.no === Number(location.hash.slice(1)));
+  if (!hit) return false;
+  state.selected = hit.no;
+  if (hit.sub_start) {
+    state.year = Number(hit.sub_start.slice(0, 4));
+    state.month = Number(hit.sub_start.slice(5, 7));
+  }
+  render();
+  $('detail').scrollIntoView({ block: 'start' });  // layout is forced here; no need to wait for a frame
+  return true;
+}
+
 async function init() {
   $('prev').addEventListener('click', () => shift(-1));
   $('next').addEventListener('click', () => shift(1));
@@ -295,14 +315,8 @@ async function init() {
     $('weeks').replaceChildren(h('p', { class: 'msg' }, '데이터를 불러오지 못했어요. 잠시 뒤 다시 열어주세요.'));
     return;
   }
-  const fromHash = Number(location.hash.slice(1));
-  const hit = state.ipos.find(i => i.no === fromHash);
-  if (hit && hit.sub_start) {
-    state.selected = hit.no;
-    state.year = Number(hit.sub_start.slice(0, 4));
-    state.month = Number(hit.sub_start.slice(5, 7));
-  }
-  render();
+  window.addEventListener('hashchange', selectFromHash);
+  if (!selectFromHash()) render();
 }
 
 init();

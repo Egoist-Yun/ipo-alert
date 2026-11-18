@@ -41,6 +41,10 @@ export function listForMonth(ipos, year, month) {
 
 export function badgeInfo(ipo) {
   if (ipo.is_spac) return { text: '스팩', tone: 'spac' };
+  if (ipo.first_close != null && ipo.final_price) {  // already listed: what actually happened beats any signal
+    const r = ipo.first_close / ipo.final_price - 1;
+    return { text: `${r >= 0 ? '+' : ''}${(r * 100).toFixed(0)}%`, tone: r < 0 ? 'risk' : '' };
+  }
   if (ipo.inst_competition == null) return { text: '대기 중', tone: 'wait' };
   const flags = ipo.flag_count ?? 0;
   const unknown = ipo.unknown_count ?? 0;
@@ -115,4 +119,22 @@ export function recordRows(ledger) {
     if (m.early) early = true;
   }
   return { rows, early };
+}
+
+// The one-line conclusion at the top of the detail panel. Listed stocks and spacs have none (they show the result / nothing).
+export function verdictInfo(ipo) {
+  if (ipo.is_spac || ipo.first_close != null) return null;
+  if (ipo.inst_competition == null) return { text: '기관 수요예측 결과가 아직 없어요.', tone: 'wait' };
+  const p = ipo.prediction || {};
+  const warn = ipo.warning;
+  if (warn) {
+    const strong = warn === 'strong';
+    const w = p.open_down || p.prob || {};
+    const caught = strong ? w.strong_caught : w.caught;
+    const warned = strong ? w.strong_warned : w.warned;
+    const head = strong ? '강한 하락 경고' : '하락 경고';
+    return { text: caught != null && warned != null ? `${head} · 경고 ${warned}개 중 ${caught}개 적중` : head, tone: 'risk' };
+  }
+  const unknown = ipo.unknown_count ?? 0;
+  return { text: unknown ? `하락 경고 없음 · 확인 불가 ${unknown}개` : '하락 경고 없음', tone: '' };
 }
