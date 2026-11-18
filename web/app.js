@@ -1,4 +1,5 @@
 import { monthGrid, barsForMonth, listForMonth, badgeInfo, staleHours } from './calendar.js';
+import { brokerLinks, showBrokerButtons, isAndroid } from './brokers.js';
 
 const $ = id => document.getElementById(id);
 const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null };
@@ -95,6 +96,17 @@ function renderList() {
   }));
 }
 
+function brokerNodes(ipo) {
+  if (!showBrokerButtons(ipo, kstToday())) return [];
+  if (!isAndroid(navigator.userAgent)) {
+    return [h('p', { class: 'note' }, '증권사 앱 열기는 안드로이드에서 할 수 있어요.')];
+  }
+  const links = brokerLinks(ipo.underwriters);
+  if (!links.length) return [];
+  return [h('div', { class: 'broker-buttons' },
+    links.map(l => h('a', { class: 'btn-medium', href: l.href }, `${l.name} 앱 열기`)))];
+}
+
 function kv(k, v, cls) {
   return h('div', { class: 'kv' }, h('span', { class: 'k' }, k), h('span', { class: `v ${cls || ''}` }, v));
 }
@@ -108,6 +120,7 @@ function renderDetail() {
   const chips = [ipo.market, ...(ipo.underwriters || [])].filter(Boolean);
   nodes.push(h('div', { class: 'chips' }, chips.map(c => h('span', { class: 'badge' }, c))));
   nodes.push(kv('청약', `${md(ipo.sub_start)}~${md(ipo.sub_end)}`));
+  nodes.push(...brokerNodes(ipo));
   if (ipo.listing_date) nodes.push(kv('상장', md(ipo.listing_date)));
 
   if (ipo.is_spac) {

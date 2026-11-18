@@ -68,6 +68,8 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .chips { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin: var(--space-md) 0 var(--space-lg); }
 .chips .badge { background: var(--surface); color: var(--body); }
 .summary { margin: var(--space-lg) 0 var(--space-md); color: var(--foreground); font-size: 1.0625rem; font-weight: 600; line-height: 1.5; }
+.broker-buttons { display: flex; flex-wrap: wrap; gap: var(--space-md); margin: var(--space-md) 0 var(--space-lg); }
+.broker-buttons .btn-medium { margin-top: 0; }
 .summary.warn { color: var(--danger); }
 .panel h4 { margin: var(--space-xl) 0 var(--space-sm); color: var(--foreground); font-size: 1rem; font-weight: 600; }
 .kv { display: flex; justify-content: space-between; gap: var(--space-lg); padding: var(--space-md) 0; border-top: 1px solid var(--border); font-size: 0.9375rem; }

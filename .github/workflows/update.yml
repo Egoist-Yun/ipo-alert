@@ -56,7 +56,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           mkdir _site
-          cp web/index.html web/style.css web/app.js web/calendar.js web/manifest.json web/icon.svg _site/
+          cp web/index.html web/style.css web/app.js web/calendar.js web/brokers.js web/manifest.json web/icon.svg _site/
           if [ -f data/ipos.json ]; then cp data/ipos.json _site/ipos.json; fi
 
       - uses: actions/configure-pages@v5
