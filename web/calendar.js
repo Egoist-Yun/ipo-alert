@@ -63,22 +63,6 @@ export function staleHours(updatedAt, nowMs) {
   return Number.isNaN(t) ? null : Math.floor((nowMs - t) / 3600000);
 }
 
-const OPEN_KEY = 'ipo.listOpen';
-
-export function readOpen(storage) {
-  try {
-    return storage?.getItem(OPEN_KEY) !== '0';
-  } catch (e) {
-    return true;
-  }
-}
-
-export function saveOpen(storage, open) {
-  try {
-    storage?.setItem(OPEN_KEY, open ? '1' : '0');
-  } catch (e) { /* storage can be blocked; the list still opens and closes */ }
-}
-
 export const REFRESH_AFTER_MS = 30 * 60 * 1000;
 
 export function needsRefresh(loadedAtMs, nowMs, afterMs = REFRESH_AFTER_MS) {
@@ -213,4 +197,21 @@ export function listingAlarms(ipos, applied, nowIso) {
       const warn = ipo.warning === 'strong' ? '\n강한 하락 경고가 있어요.' : ipo.warning === 'warn' ? '\n하락 경고가 있어요.' : '';
       return { id: ipo.no, at, title: `오늘 ${ipo.name} 상장`, body: `시초가 매도 준비.${price}${warn}`, no: ipo.no };
     });
+}
+
+// Text of a calendar bar: the name, "⚠ " in front for a risk stock, "✓ " in front of that when marked as applied.
+// State words (대기 중, 스팩, 경고, 결과 %, 신호 개수) stay out of the bar: the colour and the list below already say them.
+// A continuation piece that is one day wide (the bar began in an earlier week) is too narrow for text: colour only.
+export function barLabel({ name, risk, applied, continuationOneDay }) {
+  if (continuationOneDay) return '';
+  return `${applied ? '✓ ' : ''}${risk ? '⚠ ' : ''}${name}`;
+}
+
+// The toast shown when a stock is marked as applied. Alarms exist only in the Android app, so a browser says so; the app
+// confirms the alarm, reports switched-off notifications, or promises one for a stock whose listing date is not known yet
+// (the app schedules it the next time it opens after the date appears). A listing date already in the past: nothing to say.
+export function markToast({ native, alarmOff, hasAlarm, hasListingDate }) {
+  if (!native) return '알림은 안드로이드 앱에서만 받을 수 있어요';
+  if (hasAlarm) return alarmOff ? '알림이 꺼져 있어요' : '상장일 08:30에 알림으로 알려드릴게요, 몇 분 늦을 수 있어요';
+  return hasListingDate ? null : '상장일이 정해지면 08:30에 알림을 예약할게요';
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { monthGrid, barsForMonth, listForMonth, readOpen, saveOpen, needsRefresh } from './calendar.js';
+import { monthGrid, barsForMonth, listForMonth, needsRefresh } from './calendar.js';
 
 const A = { no: 77, name: 'A', sub_start: '2026-11-27', sub_end: '2026-11-30', flag_count: 2, is_spac: false };
 
@@ -78,20 +78,6 @@ test('badgeInfo: after subscription the open-price judgment replaces the pre-sub
 test('badgeInfo: warning level from the data wins', () => {
   assert.deepEqual(badgeInfo({ ...base, warning: 'strong' }), { text: '강한 하락 경고', tone: 'risk' });
   assert.deepEqual(badgeInfo({ ...base, warning: 'warn', prediction: { prob: { warn: true } } }), { text: '하락 경고', tone: 'risk' });
-});
-
-test('open state: default open, remembered, and safe when storage is broken', () => {
-  const mem = new Map();
-  const store = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) };
-  assert.equal(readOpen(store), true);
-  saveOpen(store, false);
-  assert.equal(readOpen(store), false);
-  saveOpen(store, true);
-  assert.equal(readOpen(store), true);
-  const broken = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };
-  assert.equal(readOpen(broken), true);
-  assert.doesNotThrow(() => saveOpen(broken, false));
-  assert.equal(readOpen(undefined), true);
 });
 
 test('needsRefresh: only after the page has been loaded for 30 minutes or more', () => {
@@ -354,4 +340,48 @@ test('listingAlarms: the body drops the price when unknown and adds the warning 
 test('listingAlarms: a bad clock value yields nothing instead of throwing', () => {
   assert.deepEqual(listingAlarms([L(7, NOV30)], new Set([7]), 'garbage'), []);
   assert.deepEqual(listingAlarms([], new Set([7]), '2026-11-18T10:00:00+09:00'), []);
+});
+
+import { barLabel } from './calendar.js';
+
+test('barLabel: a normal stock shows just its name', () => {
+  assert.equal(barLabel({ name: '유캐스트', risk: false, applied: false, continuationOneDay: false }), '유캐스트');
+});
+
+test('barLabel: risk adds a warning mark, applied adds a check mark in front of it', () => {
+  assert.equal(barLabel({ name: '유캐스트', risk: true, applied: false, continuationOneDay: false }), '⚠ 유캐스트');
+  assert.equal(barLabel({ name: '유캐스트', risk: true, applied: true, continuationOneDay: false }), '✓ ⚠ 유캐스트');
+  assert.equal(barLabel({ name: '유캐스트', risk: false, applied: true, continuationOneDay: false }), '✓ 유캐스트');
+});
+
+test('barLabel: a one-day continuation piece (the bar began in an earlier week) has no text', () => {
+  assert.equal(barLabel({ name: '유캐스트', risk: true, applied: true, continuationOneDay: true }), '');
+});
+
+test('barLabel: a spac (not risk) is just its name, no state words', () => {
+  assert.equal(barLabel({ name: '신영스팩12호', risk: false, applied: false, continuationOneDay: false }), '신영스팩12호');
+});
+
+import { markToast } from './calendar.js';
+
+test('markToast: in a browser the alarm is not available, and the toast says so', () => {
+  assert.equal(markToast({ native: false, alarmOff: false, hasAlarm: false, hasListingDate: true }), '알림은 안드로이드 앱에서만 받을 수 있어요');
+  assert.equal(markToast({ native: false, alarmOff: false, hasAlarm: false, hasListingDate: false }), '알림은 안드로이드 앱에서만 받을 수 있어요');
+});
+
+test('markToast: in the app, a scheduled alarm is confirmed', () => {
+  assert.equal(markToast({ native: true, alarmOff: false, hasAlarm: true, hasListingDate: true }), '상장일 08:30에 알림으로 알려드릴게요, 몇 분 늦을 수 있어요');
+});
+
+test('markToast: in the app with notifications switched off it says so', () => {
+  assert.equal(markToast({ native: true, alarmOff: true, hasAlarm: true, hasListingDate: true }), '알림이 꺼져 있어요');
+});
+
+test('markToast: in the app, a stock without a listing date gets a promise instead of silence', () => {
+  assert.equal(markToast({ native: true, alarmOff: false, hasAlarm: false, hasListingDate: false }), '상장일이 정해지면 08:30에 알림을 예약할게요');
+  assert.equal(markToast({ native: true, alarmOff: true, hasAlarm: false, hasListingDate: false }), '상장일이 정해지면 08:30에 알림을 예약할게요');
+});
+
+test('markToast: in the app, a listing date that is already past gets no toast', () => {
+  assert.equal(markToast({ native: true, alarmOff: false, hasAlarm: false, hasListingDate: true }), null);
 });

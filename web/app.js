@@ -1,9 +1,9 @@
-import { monthGrid, barsForMonth, badgeInfo, staleHours, readOpen, saveOpen, needsRefresh, warnText, recordRows, verdictInfo, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms } from './calendar.js';
+import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, warnText, recordRows, verdictInfo, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
 const loadedAt = Date.now();
-const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null, ledger: null, routed: false, applied: new Set(), canApply: false, alarmOff: false };
+const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null, ledger: null, routed: false, applied: new Set(), canApply: false, alarmOff: false, doneOpen: false };
 
 function h(tag, props, ...kids) {
   const el = document.createElement(tag);
@@ -79,8 +79,9 @@ function renderCalendar() {
       if (lane < 0) { lane = laneEnd.length; laneEnd.push(-1); }
       laneEnd[lane] = seg.c1;
       const ipo = state.ipos.find(i => i.no === seg.b.no);
-      const mark = state.applied.has(ipo.no) ? '✓ ' : '';
-      const label = `${mark}${seg.b.name} ${badgeText(ipo)}`;
+      // A one-day piece of a bar that began in an earlier week has no room for text: colour only.
+      const continuationOneDay = seg.s > seg.b.start && seg.c0 === seg.c1;
+      const label = barLabel({ name: seg.b.name, risk: tone(ipo) === 'risk', applied: state.applied.has(ipo.no), continuationOneDay });
       const bar = h('button', {
         class: `bar ${tone(ipo)}${state.selected === seg.b.no ? ' selected' : ''}`,
         type: 'button',
@@ -92,6 +93,16 @@ function renderCalendar() {
     }
     weeks.append(el);
   }
+  fitBars();
+}
+
+// A name that does not fit its bar gets the smaller 11px size; if it still does not fit it ends in "…" (never below 11px).
+// One pass reads every bar, one pass writes: no layout is forced inside a loop.
+function fitBars() {
+  const bars = [...document.querySelectorAll('.bar')];
+  bars.forEach(b => b.classList.remove('small'));
+  const tooLong = bars.filter(b => b.scrollWidth > b.clientWidth);
+  tooLong.forEach(b => b.classList.add('small'));
 }
 
 function localStore() {
@@ -120,10 +131,11 @@ function renderList() {
     parts.push(h('section', { class: 'group' }, h('h4', {}, `청약 예정·진행 중 · ${g.upcoming.length}개`), g.upcoming.map(i => listRow(i))));
   }
   if (g.done.length) {
-    const box = h('details', { class: 'drop', open: readOpen(localStore()) },
+    // Closed on every app start; opening it keeps it open only while the app stays open (month changes, back from a detail).
+    const box = h('details', { class: 'drop', open: state.doneOpen },
       h('summary', {}, h('span', {}, `청약 끝 · ${g.done.length}개`)),
       g.done.map(i => listRow(i, { applied: state.applied.has(i.no) })));
-    box.addEventListener('toggle', () => saveOpen(localStore(), box.open));
+    box.addEventListener('toggle', () => { state.doneOpen = box.open; });
     parts.push(box);
   }
   if (!g.upcoming.length && !g.done.length) parts.push(h('p', { class: 'msg' }, `${state.month}월에는 청약이 없어요.`));
@@ -195,9 +207,11 @@ function appliedNodes(ipo) {
       if (state.applied.has(ipo.no)) await ensureAlarmPermission();  // asked the first time a stock is marked
       await syncListingAlarms();
       renderDetail();
-      // Confirm the alarm as a toast (only when one was really scheduled for this stock).
-      if (state.applied.has(ipo.no) && notifier() && listingAlarms(state.ipos, state.applied, new Date().toISOString()).some(a => a.no === ipo.no)) {
-        showToast(state.alarmOff ? '알림이 꺼져 있어요' : '상장일 08:30에 알림으로 알려드릴게요, 몇 분 늦을 수 있어요');
+      // Tell what marking did: confirmed alarm, off, not available in a browser, or promised for a stock without a listing date.
+      if (state.applied.has(ipo.no)) {
+        const hasAlarm = listingAlarms(state.ipos, state.applied, new Date().toISOString()).some(x => x.no === ipo.no);
+        const text = markToast({ native: !!notifier(), alarmOff: state.alarmOff, hasAlarm, hasListingDate: !!ipo.listing_date });
+        if (text) showToast(text);
       }
     },
   }, on ? '신청 표시 취소' : '청약 신청했어요')];
@@ -451,6 +465,8 @@ async function init() {
   state.canApply = appliedAvailable(localStore());
   state.applied = state.canApply ? readApplied(localStore()) : new Set();
   $('back').addEventListener('click', goBack);
+  window.addEventListener('resize', fitBars);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitBars);
   $('record-link').addEventListener('click', ev => { ev.preventDefault(); go('record'); });
   const today = kstToday();
   state.year = Number(today.slice(0, 4));

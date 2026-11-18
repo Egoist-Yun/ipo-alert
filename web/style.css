@@ -22,14 +22,16 @@
   --font: "Toss Product Sans", "IBM Plex Sans", "Pretendard Variable", "Noto Sans KR", sans-serif;
 }
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+/* No grey/blue tap box on Android (Chrome, the app's WebView): the press scale below is the touch feedback. Keyboard focus keeps its ring. */
+html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
 body { margin: 0; background: var(--canvas); color: var(--body); font: 400 1rem/1.5 var(--font); }
 h1, h2, h3, h4, p { margin: 0; }
 button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; }
-/* Press feedback, approximated from a Toss app screen recording (30fps), not official values: it reacts ~150ms after the
-   touch (so a quick tap does not shrink), shrinks in ~50ms and returns in ~130ms with no delay. */
+/* Press feedback, timing approximated from a Toss app screen recording (30fps), not official values: the dim starts at
+   once (so a quick tap still shows it), the shrink waits 100ms (so a quick tap does not shrink); both go in ~50ms and
+   come back in ~130ms with no delay. Delays follow the property order: transform, opacity. */
 button, a.btn-medium { transition: transform 130ms ease-out, opacity 130ms ease-out; }
-button:active, a.btn-medium:active { transform: scale(0.96); opacity: 0.8; transition-duration: 50ms; transition-delay: 150ms; }
+button:active, a.btn-medium:active { transform: scale(0.96); opacity: 0.8; transition-duration: 50ms; transition-delay: 100ms, 0ms; }
 button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--focus-inner), 0 0 0 3px var(--focus-outer); }
 
 /* Edge-to-edge screens (the Android app, phones with a camera cut-out): keep content out from under the status bar / camera /
@@ -53,6 +55,7 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .day.empty { visibility: hidden; }
 
 .bar { min-width: 0; margin: 0 var(--space-xs); padding: 0 var(--space-sm); border-radius: 6px; background: var(--weak-bg); color: var(--weak-fg); font-size: 0.75rem; font-weight: 600; line-height: 24px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar.small { font-size: 11px; }
 .bar.risk { background: var(--danger-weak); color: var(--danger); }
 .bar.wait, .bar.spac { background: var(--surface); color: var(--body); }
 .bar.spac { color: var(--muted); }
