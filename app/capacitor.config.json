@@ -1,0 +1,10 @@
+{
+  "appId": "io.github.egoistyun.ipoalert",
+  "appName": "공모주 달력",
+  "webDir": "www",
+  "server": {
+    "url": "https://egoist-yun.github.io/ipo-alert/",
+    "cleartext": false,
+    "errorPath": "index.html"
+  }
+}

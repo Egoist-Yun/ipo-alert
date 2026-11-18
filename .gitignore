@@ -4,3 +4,11 @@ __pycache__/
 web/ipos.json
 *.pyc
 .pytest_cache/
+app/node_modules/
+app/build.log
+app/android/.gradle/
+app/android/build/
+app/android/app/build/
+app/android/local.properties
+app/android/capacitor-cordova-android-plugins/build/
+app/dist/

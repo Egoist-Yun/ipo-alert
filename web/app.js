@@ -1,5 +1,5 @@
 import { monthGrid, barsForMonth, listForMonth, badgeInfo, staleHours } from './calendar.js';
-import { brokerLinks, showBrokerButtons, isAndroid } from './brokers.js';
+import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
 const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null };
@@ -104,7 +104,25 @@ function brokerNodes(ipo) {
   const links = brokerLinks(ipo.underwriters);
   if (!links.length) return [];
   return [h('div', { class: 'broker-buttons' },
-    links.map(l => h('a', { class: 'btn-medium', href: l.href }, `${l.name} 앱 열기`)))];
+    links.map(l => brokerButton(l)))];
+}
+
+async function launchBroker(action) {
+  const launcher = window.Capacitor?.Plugins?.AppLauncher;
+  try {
+    const res = await launcher.openUrl({ url: action.url });
+    if (res && res.completed) return;
+  } catch (e) { /* fall through to the Play Store */ }
+  window.location.href = action.fallback;
+}
+
+function brokerButton(link) {
+  const action = brokerAction(link, isNativeApp(window));
+  if (action.type === 'launch') {
+    return h('a', { class: 'btn-medium', href: action.fallback, onclick: ev => { ev.preventDefault(); launchBroker(action); } },
+      `${link.name} 앱 열기`);
+  }
+  return h('a', { class: 'btn-medium', href: action.href }, `${link.name} 앱 열기`);
 }
 
 function kv(k, v, cls) {

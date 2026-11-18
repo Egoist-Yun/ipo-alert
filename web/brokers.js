@@ -40,7 +40,7 @@ export function brokerLinks(underwriters) {
     const href = pkg
       ? `intent://#Intent;package=${pkg};S.browser_fallback_url=${encodeURIComponent(`https://play.google.com/store/apps/details?id=${pkg}`)};end`
       : `market://search?q=${encodeURIComponent(name)}&c=apps`;
-    out.push({ name, href, verified: Boolean(pkg) });
+    out.push({ name, href, verified: Boolean(pkg), pkg: pkg || null });
   }
   return out;
 }
@@ -51,4 +51,17 @@ export function showBrokerButtons(ipo, todayIso) {
 
 export function isAndroid(userAgent) {
   return /Android/i.test(userAgent || '');
+}
+
+// Inside the Capacitor app a verified broker is launched by package name (AppLauncher.openUrl takes a package name);
+// anywhere else the intent / search link is kept.
+export function brokerAction(link, native) {
+  if (native && link.verified && link.pkg) {
+    return { type: 'launch', url: link.pkg, fallback: `market://details?id=${link.pkg}` };
+  }
+  return { type: 'link', href: link.href };
+}
+
+export function isNativeApp(win) {
+  return win?.Capacitor?.isNativePlatform?.() === true;
 }

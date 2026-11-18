@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeBroker, brokerLinks, showBrokerButtons, isAndroid } from './brokers.js';
+import { normalizeBroker, brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const fallback = pkg => encodeURIComponent(`https://play.google.com/store/apps/details?id=${pkg}`);
 
@@ -44,4 +44,34 @@ test('isAndroid', () => {
   assert.equal(isAndroid('Mozilla/5.0 (Linux; Android 14; SM-S918N) AppleWebKit/537.36 Chrome/131 Mobile Safari/537.36'), true);
   assert.equal(isAndroid('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15'), false);
   assert.equal(isAndroid('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131'), false);
+});
+
+test('brokerLinks exposes the package of verified brokers only', () => {
+  assert.equal(brokerLinks(['유진증권'])[0].pkg, 'com.eugenefn.smartchampion2');
+  assert.equal(brokerLinks(['신영증권'])[0].pkg, null);
+});
+
+test('inside the app a verified broker is launched directly with a Play Store fallback', () => {
+  const link = brokerLinks(['유진투자증권'])[0];
+  assert.deepEqual(brokerAction(link, true), {
+    type: 'launch', url: 'com.eugenefn.smartchampion2', fallback: 'market://details?id=com.eugenefn.smartchampion2',
+  });
+});
+
+test('inside the app an unknown broker still opens the Play Store search', () => {
+  const link = brokerLinks(['신영증권'])[0];
+  assert.deepEqual(brokerAction(link, true), { type: 'link', href: link.href });
+});
+
+test('outside the app the intent link is kept', () => {
+  const link = brokerLinks(['유진투자증권'])[0];
+  assert.deepEqual(brokerAction(link, false), { type: 'link', href: link.href });
+});
+
+test('isNativeApp is safe in any environment', () => {
+  assert.equal(isNativeApp(undefined), false);
+  assert.equal(isNativeApp({}), false);
+  assert.equal(isNativeApp({ Capacitor: {} }), false);
+  assert.equal(isNativeApp({ Capacitor: { isNativePlatform: () => false } }), false);
+  assert.equal(isNativeApp({ Capacitor: { isNativePlatform: () => true } }), true);
 });
