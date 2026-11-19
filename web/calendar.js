@@ -305,3 +305,27 @@ export function offerInfoRows(ipo) {
   if (ipo.retail_competition != null) rows.push({ k: '일반청약 경쟁률', v: `${fmtN(Number(ipo.retail_competition.toFixed(2)))}:1` });
   return rows;
 }
+
+// Lays out one week of the subscription calendar: bars (multi-day) and the one-day listing marks of the stocks I applied for.
+// Every lane keeps a 7-cell occupancy row. Bars go first, in start-day order, into the topmost lane where all their cells are
+// free (the same result as the older "last column per lane" rule). Then each mark takes the topmost lane whose day cell is free
+// (a new lane if none). A mark stays inside its own day cell: stretching it over the cells to its right looked like a period.
+export function layoutWeek(barSegs, markSegs) {
+  const lanes = [];
+  const newLane = () => { lanes.push(Array(7).fill(false)); return lanes.length - 1; };
+  const free = (lane, c0, c1) => { for (let c = c0; c <= c1; c++) if (lane[c]) return false; return true; };
+  const items = [];
+  for (const seg of [...barSegs].sort((a, b) => a.c0 - b.c0 || a.c1 - b.c1)) {
+    let li = lanes.findIndex(l => free(l, seg.c0, seg.c1));
+    if (li < 0) li = newLane();
+    for (let c = seg.c0; c <= seg.c1; c++) lanes[li][c] = true;
+    items.push({ seg, lane: li, c0: seg.c0, c1: seg.c1 });
+  }
+  for (const seg of [...markSegs].sort((a, b) => a.c0 - b.c0)) {
+    let li = lanes.findIndex(l => !l[seg.c0]);
+    if (li < 0) li = newLane();
+    lanes[li][seg.c0] = true;
+    items.push({ seg, lane: li, c0: seg.c0, c1: seg.c0 });
+  }
+  return { items, lanes: lanes.length };
+}

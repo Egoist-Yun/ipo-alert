@@ -1,4 +1,4 @@
-import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, warnText, recordRows, verdictInfo, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks, barTone, subscriptionFacts, offerInfoRows } from './calendar.js';
+import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, warnText, recordRows, verdictInfo, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks, barTone, subscriptionFacts, offerInfoRows, layoutWeek } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
@@ -71,28 +71,24 @@ function renderCalendar() {
       .map(b => ({ b, s: b.start < lo ? lo : b.start, e: b.end > hi ? hi : b.end }))
       .filter(x => x.s <= x.e)
       .map(x => ({ ...x, c0: week.indexOf(x.s), c1: week.indexOf(x.e) }));
-    // A listing mark is a one-day piece on its date, laid out in the same lanes as the subscription bars.
-    const markSegs = marks.filter(m => week.includes(m.date)).map(m => ({ mark: m, c0: week.indexOf(m.date), c1: week.indexOf(m.date) }));
-    // On the same start day a subscription bar goes before a listing mark (a mark is one day wide and would otherwise push the bar to the next lane).
-    const segs = [...barSegs, ...markSegs].sort((a, b) => a.c0 - b.c0 || (!!a.mark - !!b.mark) || a.c1 - b.c1);
-    const laneEnd = [];
+    // A listing mark is "dot + name" inside its own listing-day cell, placed after the bars in the topmost lane with that cell free.
+    const markSegs = marks.filter(m => week.includes(m.date)).map(m => ({ mark: m, c0: week.indexOf(m.date) }));
+    const { items } = layoutWeek(barSegs, markSegs);
     const el = h('div', { class: 'week' },
       week.map(d => h('div', { class: `day${d === today ? ' today' : ''}${d ? '' : ' empty'}` }, d ? Number(d.slice(8)) : '0')));
-    for (const seg of segs) {
-      let lane = laneEnd.findIndex(end => end < seg.c0);
-      if (lane < 0) { lane = laneEnd.length; laneEnd.push(-1); }
-      laneEnd[lane] = seg.c1;
+    for (const { seg, lane, c0, c1 } of items) {
+      const place = `grid-column:${c0 + 1} / ${c1 + 2};grid-row:${lane + 2}`;
       if (seg.mark) {
         const m = seg.mark;
         const mipo = state.ipos.find(i => i.no === m.no);
         const now = dayStatus(mipo, today) === '오늘 상장';
         el.append(h('button', {
-          class: `bar listing${m.listed ? ' done' : ''}${now ? ' now' : ''}${state.selected === m.no ? ' selected' : ''}`,
+          class: `bar mark${m.listed ? ' done' : ''}${now ? ' now' : ''}${state.selected === m.no ? ' selected' : ''}`,
           type: 'button',
-          style: `grid-column:${seg.c0 + 1} / ${seg.c1 + 2};grid-row:${lane + 2}`,
+          style: place,
           'aria-label': `${m.name} 상장일 ${md(m.date)}, 청약 신청함`,
           onclick: () => select(m.no),
-        }, '상장'));
+        }, '상장'));  // the name is in the aria-label and the list below: the cell is too narrow for it
         continue;
       }
       const ipo = state.ipos.find(i => i.no === seg.b.no);
@@ -103,27 +99,16 @@ function renderCalendar() {
       // A bar that crosses a week edge is cut square on that side and runs to the cell edge: it reads as "continues".
       const contL = seg.s > seg.b.start ? ' cont-l' : '';
       const contR = seg.e < seg.b.end ? ' cont-r' : '';
-      const bar = h('button', {
+      el.append(h('button', {
         class: `bar ${bt}${contL}${contR}${state.selected === seg.b.no ? ' selected' : ''}`,
         type: 'button',
-        style: `grid-column:${seg.c0 + 1} / ${seg.c1 + 2};grid-row:${lane + 2}`,
+        style: place,
         'aria-label': `${state.applied.has(ipo.no) ? '청약 신청함, ' : ''}${seg.b.name}, ${badgeText(ipo)}, 청약 ${md(ipo.sub_start)}~${md(ipo.sub_end)}`,
         onclick: () => select(seg.b.no),
-      }, label);
-      el.append(bar);
+      }, label));
     }
     weeks.append(el);
   }
-  fitBars();
-}
-
-// A name that does not fit its bar gets the smaller 11px size; if it still does not fit it ends in "…" (never below 11px).
-// One pass reads every bar, one pass writes: no layout is forced inside a loop.
-function fitBars() {
-  const bars = [...document.querySelectorAll('.bar:not(.listing)')];  // the two-letter listing marks always fit
-  bars.forEach(b => b.classList.remove('small'));
-  const tooLong = bars.filter(b => b.scrollWidth > b.clientWidth);
-  tooLong.forEach(b => b.classList.add('small'));
 }
 
 function localStore() {
@@ -497,8 +482,6 @@ async function init() {
   state.canApply = appliedAvailable(localStore());
   state.applied = state.canApply ? readApplied(localStore()) : new Set();
   $('back').addEventListener('click', goBack);
-  window.addEventListener('resize', fitBars);
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitBars);
   $('record-link').addEventListener('click', ev => { ev.preventDefault(); go('record'); });
   const today = kstToday();
   state.year = Number(today.slice(0, 4));

@@ -591,3 +591,70 @@ test('offerInfoRows: small amounts keep one decimal and never print -0', () => {
   assert.equal(offerInfoRows({ net_income_mil: -1 })[0].v, '0억 원');   // rounds to 0.0: no "-0.0"
   assert.equal(offerInfoRows({ net_income_mil: -40 })[0].v, '-0.4억 원');
 });
+
+import { layoutWeek } from './calendar.js';
+
+// The lane rule the calendar used before (one "last column" per lane), kept here as the reference for the regression test.
+function oldLanes(barSegs) {
+  const sorted = [...barSegs].sort((a, b) => a.c0 - b.c0 || a.c1 - b.c1);
+  const laneEnd = [];
+  return sorted.map(seg => {
+    let lane = laneEnd.findIndex(end => end < seg.c0);
+    if (lane < 0) { lane = laneEnd.length; laneEnd.push(-1); }
+    laneEnd[lane] = seg.c1;
+    return { seg, lane };
+  });
+}
+const B = (c0, c1, id) => ({ c0, c1, id });
+const M = (c0, id) => ({ c0, mark: { no: id } });
+const lanesOf = (res, kind) => res.items.filter(i => (kind === 'mark' ? i.seg.mark : !i.seg.mark)).map(i => [i.seg.id ?? i.seg.mark.no, i.lane, i.c0, i.c1]);
+
+test('layoutWeek (a): bars alone are laid out exactly like the old lane rule', () => {
+  const bars = [B(0, 1, 'A'), B(1, 2, 'B'), B(2, 2, 'C'), B(3, 5, 'D')];
+  const res = layoutWeek(bars, []);
+  assert.deepEqual(lanesOf(res, 'bar'), [['A', 0, 0, 1], ['B', 1, 1, 2], ['C', 0, 2, 2], ['D', 0, 3, 5]]);
+  assert.equal(res.lanes, 2);
+  // many pseudo-random weeks: same lane for every bar as the old rule
+  let seed = 7;
+  const rnd = n => (seed = (seed * 1103515245 + 12345) % 2147483648) % n;
+  for (let t = 0; t < 300; t++) {
+    const segs = Array.from({ length: rnd(8) }, (_, k) => { const c0 = rnd(7); return B(c0, c0 + rnd(7 - c0), k); });
+    const expected = oldLanes(segs).map(x => [x.seg.id, x.lane]);
+    const got = layoutWeek(segs, []).items.map(i => [i.seg.id, i.lane]);
+    assert.deepEqual(got, expected, JSON.stringify(segs));
+  }
+});
+
+test('layoutWeek (b): a mark goes into the topmost lane whose day cell is free (no new lane)', () => {
+  const res = layoutWeek([B(0, 1, 'A'), B(3, 4, 'B')], [M(2, 'm')]);
+  assert.deepEqual(lanesOf(res, 'mark')[0].slice(0, 2), ['m', 0]);   // cell 2 is free in lane 0
+  assert.equal(res.lanes, 1);
+});
+
+test('layoutWeek (c): a mark stays inside its own day cell (it never stretches over the cells to its right)', () => {
+  const res = layoutWeek([B(0, 1, 'A'), B(4, 5, 'B')], [M(2, 'm')]);
+  assert.deepEqual(lanesOf(res, 'mark')[0], ['m', 0, 2, 2]);
+  const open = layoutWeek([B(0, 0, 'A')], [M(3, 'm')]);
+  assert.deepEqual(lanesOf(open, 'mark')[0], ['m', 0, 3, 3]);
+});
+
+test('layoutWeek (d): when no lane has the day cell free a new lane is added', () => {
+  const res = layoutWeek([B(0, 2, 'A'), B(1, 3, 'B')], [M(2, 'm')]);   // lane 0: 0-2, lane 1: 1-3: cell 2 taken in both
+  assert.deepEqual(lanesOf(res, 'mark')[0], ['m', 2, 2, 2]);
+  assert.equal(res.lanes, 3);
+});
+
+test('layoutWeek (e): two marks on the same day take two lanes; marks on different days share a lane', () => {
+  const same = layoutWeek([], [M(2, 'x'), M(2, 'y')]);
+  assert.deepEqual(lanesOf(same, 'mark').map(m => [m[0], m[1]]), [['x', 0], ['y', 1]]);
+  assert.equal(same.lanes, 2);
+  const apart = layoutWeek([], [M(1, 'x'), M(4, 'y')]);
+  assert.deepEqual(lanesOf(apart, 'mark'), [['x', 0, 1, 1], ['y', 0, 4, 4]]);
+  assert.equal(apart.lanes, 1);
+});
+
+test('layoutWeek (f): the number of lanes (0 when empty)', () => {
+  assert.equal(layoutWeek([], []).lanes, 0);
+  assert.equal(layoutWeek([B(0, 6, 'A')], []).lanes, 1);
+  assert.equal(layoutWeek([B(0, 6, 'A'), B(0, 6, 'B'), B(0, 6, 'C')], [M(3, 'm')]).lanes, 4);
+});

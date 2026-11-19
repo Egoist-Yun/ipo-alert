@@ -49,24 +49,25 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .btn-small { height: 32px; min-width: 44px; padding: 0 var(--space-lg); border-radius: 8px; background: var(--weak-bg); color: var(--weak-fg); font-size: 0.9375rem; font-weight: 600; }
 
 .dow { display: grid; grid-template-columns: repeat(7, 1fr); padding-bottom: var(--space-sm); color: var(--muted); font-size: 0.75rem; line-height: 1.5; text-align: center; }
-.week { display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: 32px; row-gap: 0; padding: var(--space-xs) 0 var(--space-md); border-top: 1px solid var(--border); }
+.week { display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: 26px; row-gap: 0; padding: var(--space-xs) 0 var(--space-md); border-top: 1px solid var(--border); }
 .day { grid-row: 1; align-self: center; height: 24px; color: var(--body); font-size: 0.8125rem; line-height: 24px; text-align: center; }
 .day.today { color: var(--weak-fg); font-weight: 700; }
 .day.empty { visibility: hidden; }
 
-.bar { min-width: 0; margin: 0 var(--space-xs); padding: 0 var(--space-sm); border-radius: 6px; background: var(--weak-bg); color: var(--weak-fg); font-size: 0.75rem; font-weight: 600; line-height: 24px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  /* the visible bar stays 24px; transparent 4px borders widen the tap area to 32px */
-  box-sizing: content-box; border-top: 4px solid transparent; border-bottom: 4px solid transparent; background-clip: padding-box; }
-.bar.small { font-size: 11px; }
+.bar { min-width: 0; margin: 0 var(--space-xs); padding: 0 var(--space-sm); border-radius: 6px; background: var(--weak-bg); color: var(--weak-fg); font-size: 0.6875rem; font-weight: 600; line-height: 20px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  /* every lane is thin: the visible bar is 20px; transparent 3px borders widen the tap area to 26px */
+  box-sizing: content-box; border-top: 3px solid transparent; border-bottom: 3px solid transparent; background-clip: padding-box; }
 .bar.risk { background-color: var(--danger-weak); color: var(--danger); }
-/* my listing day (sell day) on the subscription calendar: a two-letter one-day mark; "now" = it lists today; "done" = already listed */
-.bar.listing { background-color: var(--weak-bg); color: var(--weak-fg); text-align: center; padding: 0 2px; }
-.bar.listing.now { background-color: var(--weak-fg); color: var(--canvas); }
+/* my listing day (sell day) on the subscription calendar: "dot + name 상장", no fill; "now" = lists today; "done" = already listed */
+.bar.mark { padding: 0 2px; background-color: transparent; color: var(--weak-fg); font-weight: 600; text-align: left; }  /* one day cell wide: tight padding */
+.bar.mark::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 3px; border-radius: 50%; background: currentColor; vertical-align: middle; }
+.bar.mark.now { background-color: var(--weak-bg); font-weight: 700; }
 /* past bars (subscription over, or already listed): grey; colour is only for what is still ahead. Selected/focus below win. */
 .bar.done { background-color: var(--surface); color: var(--body); }
+.bar.mark.done { background-color: transparent; color: var(--body); }  /* after .bar.done (grey fill): no fill for a mark */
 .bar.cont-l { margin-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
 .bar.cont-r { margin-right: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.bar.selected { box-shadow: inset 0 0 0 2px var(--primary); }  /* inset: follows the visible 24px, not the 32px tap area */
+.bar.selected { box-shadow: inset 0 0 0 2px var(--primary); }  /* inset: follows the visible 20px, not the 26px tap area */
 .bar:focus-visible { box-shadow: inset 0 0 0 1px var(--focus-inner), inset 0 0 0 3px var(--focus-outer); }
 
 .list { margin-top: var(--space-xl); }
