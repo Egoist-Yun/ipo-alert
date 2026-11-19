@@ -224,3 +224,13 @@ export function dayStatus(ipo, todayIso) {
   if (ipo.sub_start === todayIso) return '오늘 청약 시작';
   return null;
 }
+
+// The listing days (sell days) of the stocks the user applied for, inside one month: shown on the subscription calendar
+// as one-day "상장" marks. Sorted by date, then stock number.
+export function listingMarks(ipos, applied, year, month) {
+  const [first, last] = bounds(year, month);
+  return ipos
+    .filter(i => applied.has(i.no) && i.listing_date && i.listing_date >= first && i.listing_date <= last)
+    .map(i => ({ no: i.no, name: i.name, date: i.listing_date, listed: i.first_close != null }))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.no - b.no);
+}

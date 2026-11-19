@@ -1,4 +1,4 @@
-import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, warnText, recordRows, verdictInfo, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus } from './calendar.js';
+import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, warnText, recordRows, verdictInfo, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
@@ -60,17 +60,20 @@ function renderCalendar() {
   const { year, month } = state;
   $('month').textContent = `${year}년 ${month}월`;
   const bars = barsForMonth(state.ipos, year, month);
+  const marks = listingMarks(state.ipos, state.applied, year, month);  // listing days of the stocks I applied for
   const today = kstToday();
   const weeks = $('weeks');
   weeks.replaceChildren();
   for (const week of monthGrid(year, month)) {
     const real = week.filter(Boolean);
     const lo = real[0], hi = real[real.length - 1];
-    const segs = bars
+    const barSegs = bars
       .map(b => ({ b, s: b.start < lo ? lo : b.start, e: b.end > hi ? hi : b.end }))
       .filter(x => x.s <= x.e)
-      .map(x => ({ ...x, c0: week.indexOf(x.s), c1: week.indexOf(x.e) }))
-      .sort((a, b) => a.c0 - b.c0 || a.c1 - b.c1);
+      .map(x => ({ ...x, c0: week.indexOf(x.s), c1: week.indexOf(x.e) }));
+    // A listing mark is a one-day piece on its date, laid out in the same lanes as the subscription bars.
+    const markSegs = marks.filter(m => week.includes(m.date)).map(m => ({ mark: m, c0: week.indexOf(m.date), c1: week.indexOf(m.date) }));
+    const segs = [...barSegs, ...markSegs].sort((a, b) => a.c0 - b.c0 || a.c1 - b.c1);
     const laneEnd = [];
     const el = h('div', { class: 'week' },
       week.map(d => h('div', { class: `day${d === today ? ' today' : ''}${d ? '' : ' empty'}` }, d ? Number(d.slice(8)) : '0')));
@@ -78,6 +81,19 @@ function renderCalendar() {
       let lane = laneEnd.findIndex(end => end < seg.c0);
       if (lane < 0) { lane = laneEnd.length; laneEnd.push(-1); }
       laneEnd[lane] = seg.c1;
+      if (seg.mark) {
+        const m = seg.mark;
+        const mipo = state.ipos.find(i => i.no === m.no);
+        const now = dayStatus(mipo, today) === '오늘 상장';
+        el.append(h('button', {
+          class: `bar listing${m.listed ? ' done' : ''}${now ? ' now' : ''}${state.selected === m.no ? ' selected' : ''}`,
+          type: 'button',
+          style: `grid-column:${seg.c0 + 1} / ${seg.c1 + 2};grid-row:${lane + 2}`,
+          'aria-label': `${m.name} 상장일 ${md(m.date)}, 청약 신청함`,
+          onclick: () => select(m.no),
+        }, '상장'));
+        continue;
+      }
       const ipo = state.ipos.find(i => i.no === seg.b.no);
       // A one-day piece of a bar that began in an earlier week has no room for text: colour only.
       const continuationOneDay = seg.s > seg.b.start && seg.c0 === seg.c1;
@@ -99,7 +115,7 @@ function renderCalendar() {
 // A name that does not fit its bar gets the smaller 11px size; if it still does not fit it ends in "…" (never below 11px).
 // One pass reads every bar, one pass writes: no layout is forced inside a loop.
 function fitBars() {
-  const bars = [...document.querySelectorAll('.bar')];
+  const bars = [...document.querySelectorAll('.bar:not(.listing)')];  // the two-letter listing marks always fit
   bars.forEach(b => b.classList.remove('small'));
   const tooLong = bars.filter(b => b.scrollWidth > b.clientWidth);
   tooLong.forEach(b => b.classList.add('small'));

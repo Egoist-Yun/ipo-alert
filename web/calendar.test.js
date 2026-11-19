@@ -141,12 +141,12 @@ test('badgeInfo: a listed stock shows its actual first-day return', () => {
 const waiting = { ...base, inst_competition: null };
 const counts = { warned: 15, caught: 10, n_down: 18, strong_warned: 10, strong_caught: 7 };
 
-test('verdictInfo: strong warning names the counts behind it', () => {
+test('verdictInfo: strong warning is the headline only', () => {
   const ipo = { ...base, flag_count: 3, warning: 'strong', prediction: { prob: counts } };
   assert.deepEqual(verdictInfo(ipo), { text: '강한 하락 경고', tone: 'risk' });
 });
 
-test('verdictInfo: after the subscription the open-price judgment supplies the counts', () => {
+test('verdictInfo: after the subscription the warning level still comes from the data', () => {
   const ipo = { ...base, warning: 'warn', prediction: { prob: counts, open_down: { warned: 16, caught: 10, n_down: 12 } } };
   assert.deepEqual(verdictInfo(ipo), { text: '하락 경고', tone: 'risk' });
 });
@@ -427,4 +427,36 @@ test('dayStatus: tomorrow is computed as a calendar day across month and year en
   assert.equal(dayStatus(DS({ listing_date: '2027-01-01' }), '2026-12-31'), '내일 상장');
   assert.equal(dayStatus(DS({ listing_date: '2028-02-29' }), '2028-02-28'), '내일 상장');  // leap day
   assert.equal(dayStatus(DS({ listing_date: '2026-03-01' }), '2026-02-28'), '내일 상장');  // no leap day
+});
+
+import { listingMarks } from './calendar.js';
+
+const LM = (no, listing_date, extra = {}) => ({ no, name: `S${no}`, listing_date, ...extra });
+
+test('listingMarks: only stocks the user applied for, with a listing date inside the month', () => {
+  const ipos = [LM(1, '2026-11-30'), LM(2, '2026-11-20'), LM(3, '2026-12-02'), LM(4, null), LM(5, '2026-10-22')];
+  assert.deepEqual(listingMarks(ipos, new Set([1, 3, 4, 5]), 2026, 11).map(m => m.no), [1]);
+  assert.deepEqual(listingMarks(ipos, new Set([1, 2, 3, 4, 5]), 2026, 12).map(m => m.no), [3]);
+});
+
+test('listingMarks: stocks not applied for are left out', () => {
+  assert.deepEqual(listingMarks([LM(1, '2026-11-30')], new Set(), 2026, 11), []);
+  assert.deepEqual(listingMarks([LM(1, '2026-11-30')], new Set([9]), 2026, 11), []);
+});
+
+test('listingMarks: month boundaries are inclusive', () => {
+  const ipos = [LM(1, '2026-11-01'), LM(2, '2026-11-30'), LM(3, '2026-12-01'), LM(4, '2026-10-31')];
+  assert.deepEqual(listingMarks(ipos, new Set([1, 2, 3, 4]), 2026, 11).map(m => m.no), [1, 2]);
+});
+
+test('listingMarks: a listed stock carries listed: true; the shape is {no, name, date, listed}', () => {
+  const [m] = listingMarks([LM(7, '2026-11-10', { first_close: 12000 })], new Set([7]), 2026, 11);
+  assert.deepEqual(m, { no: 7, name: 'S7', date: '2026-11-10', listed: true });
+  const [n] = listingMarks([LM(8, '2026-11-26')], new Set([8]), 2026, 11);
+  assert.equal(n.listed, false);
+});
+
+test('listingMarks: sorted by date, then stock number; two stocks on the same day both appear', () => {
+  const ipos = [LM(9, '2026-11-26'), LM(3, '2026-11-26'), LM(5, '2026-11-20')];
+  assert.deepEqual(listingMarks(ipos, new Set([9, 3, 5]), 2026, 11).map(m => [m.date, m.no]), [['2026-11-20', 5], ['2026-11-26', 3], ['2026-11-26', 9]]);
 });
