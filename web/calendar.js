@@ -246,7 +246,15 @@ export function barTone(ipo, todayIso) {
 // ---- Basic offering information for the detail screen ----
 const fmtN = n => Number(n).toLocaleString('ko-KR');
 const monthDay = iso => `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))}`;
-const eok = mil => `${fmtN(Math.round(mil / 100))}억 원`;  // the data is in million KRW: 100 million = 1억
+// The data is in million KRW: 100 million = 1억. Under 1억 one decimal is kept; nothing prints as "-0".
+const eok = mil => {
+  const v = mil / 100;
+  if (Math.abs(v) < 1) {
+    const r = Number(v.toFixed(1));
+    return r === 0 ? '0억 원' : `${r}억 원`;
+  }
+  return `${fmtN(Math.round(v))}억 원`;
+};
 const UNKNOWN = '확인 불가';
 
 // The three facts needed to subscribe: price (with the band), the minimum amount, the refund day. Values that are not known
@@ -276,13 +284,18 @@ export function offerInfoRows(ipo) {
   const rows = [];
   if (ipo.offer_amount_mil != null) rows.push({ k: '공모금액', v: eok(ipo.offer_amount_mil) });
   if (ipo.total_shares != null) {
-    const retail = ipo.retail_shares != null
-      ? ` · 일반 ${fmtN(ipo.retail_shares)}주 (${Number((ipo.retail_shares / ipo.total_shares * 100).toFixed(1))}%)` : '';
+    let retail = '';
+    if (ipo.retail_shares != null && ipo.retail_shares_high != null) retail = ` · 일반 ${fmtN(ipo.retail_shares)}~${fmtN(ipo.retail_shares_high)}주`;  // still a range: no percentage
+    else if (ipo.retail_shares != null) retail = ` · 일반 ${fmtN(ipo.retail_shares)}주 (${Number((ipo.retail_shares / ipo.total_shares * 100).toFixed(1))}%)`;
     rows.push({ k: '공모주식', v: `총 ${fmtN(ipo.total_shares)}주${retail}` });
   }
   for (const b of ipo.brokers || []) {
     if (b.shares == null) continue;
-    rows.push({ k: b.name, v: `${fmtN(b.shares)}주${b.limit_max != null ? ` · 한도 ${fmtN(b.limit_max)}주` : ''}` });
+    const nums = String(b.limit_text || '').match(/\d[\d,]*/g) || [];
+    const limits = nums.map(n => Number(n.replace(/,/g, '')));
+    const limit = limits.length >= 2 ? `${fmtN(Math.min(...limits))}~${fmtN(Math.max(...limits))}`
+      : limits.length === 1 ? fmtN(limits[0]) : (b.limit_max != null ? fmtN(b.limit_max) : null);
+    rows.push({ k: b.name, v: `${fmtN(b.shares)}주${limit ? ` · 한도 ${limit}주` : ''}` });
   }
   if (ipo.industry) rows.push({ k: '업종', v: ipo.industry });
   if (ipo.revenue_mil != null) rows.push({ k: '매출액', v: eok(ipo.revenue_mil) });

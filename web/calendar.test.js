@@ -538,7 +538,7 @@ test('offerInfoRows: amount, shares, brokers, industry, financials, demand perio
   assert.deepEqual(rows, [
     { k: '공모금액', v: '152억 원' },
     { k: '공모주식', v: '총 800,000주 · 일반 200,000주 (25%)' },
-    { k: '유진투자증권', v: '160,000주 · 한도 20,000주' },
+    { k: '유진투자증권', v: '160,000주 · 한도 16,000~20,000주' },
     { k: '신영증권', v: '40,000주 · 한도 1,300주' },
     { k: '업종', v: '소프트웨어' },
     { k: '매출액', v: '123억 원' },
@@ -564,4 +564,30 @@ test('offerInfoRows: a large amount gets a thousands separator', () => {
 test('subscriptionFacts: a band whose ends are equal (a spac) is shown as one price, not "2,000~2,000"', () => {
   assert.equal(subscriptionFacts({ band_low: 2000, band_high: 2000 })[0].v, '희망 2,000원 · 확정 전');
   assert.equal(subscriptionFacts({ final_price: 2000, band_low: 2000, band_high: 2000 })[0].v, '2,000원 (희망 2,000원)');
+});
+
+test('offerInfoRows: a retail share that is still a range is shown as a range, without a percentage', () => {
+  const rows = offerInfoRows({ total_shares: 2170000, retail_shares: 542500, retail_shares_high: 651000 });
+  assert.deepEqual(rows, [{ k: '공모주식', v: '총 2,170,000주 · 일반 542,500~651,000주' }]);
+  assert.equal(offerInfoRows({ total_shares: 800000, retail_shares: 200000, retail_shares_high: null })[0].v, '총 800,000주 · 일반 200,000주 (25%)');
+});
+
+test('offerInfoRows: a broker limit shows the range, a single number, or nothing', () => {
+  const rows = offerInfoRows({ brokers: [
+    { name: 'A증권', shares: 160000, limit_text: '16,000 ~ 20,000 주', limit_max: 20000 },
+    { name: 'B증권', shares: 40000, limit_text: '1,300 주', limit_max: 1300 },
+    { name: 'C증권', shares: 10000, limit_text: '-', limit_max: null },
+  ] });
+  assert.deepEqual(rows.map(r => r.v), ['160,000주 · 한도 16,000~20,000주', '40,000주 · 한도 1,300주', '10,000주']);
+});
+
+test('offerInfoRows: small amounts keep one decimal and never print -0', () => {
+  const v = mil => offerInfoRows({ offer_amount_mil: mil })[0].v;
+  assert.equal(v(15200), '152억 원');
+  assert.equal(offerInfoRows({ net_income_mil: -3556 })[0].v, '-36억 원');
+  assert.equal(offerInfoRows({ net_income_mil: -30 })[0].v, '-0.3억 원');
+  assert.equal(v(40), '0.4억 원');
+  assert.equal(v(0), '0억 원');
+  assert.equal(offerInfoRows({ net_income_mil: -1 })[0].v, '0억 원');   // rounds to 0.0: no "-0.0"
+  assert.equal(offerInfoRows({ net_income_mil: -40 })[0].v, '-0.4억 원');
 });
