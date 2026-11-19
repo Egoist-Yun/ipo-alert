@@ -242,3 +242,53 @@ export function barTone(ipo, todayIso) {
   if (ipo.first_close != null || (ipo.sub_end && ipo.sub_end < todayIso)) return 'done';
   return badgeInfo(ipo).tone === 'risk' ? 'risk' : '';
 }
+
+// ---- Basic offering information for the detail screen ----
+const fmtN = n => Number(n).toLocaleString('ko-KR');
+const monthDay = iso => `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))}`;
+const eok = mil => `${fmtN(Math.round(mil / 100))}억 원`;  // the data is in million KRW: 100 million = 1억
+const UNKNOWN = '확인 불가';
+
+// The three facts needed to subscribe: price (with the band), the minimum amount, the refund day. Values that are not known
+// say 확인 불가 and are never guessed (no assumed deposit rate). The minimum assumes 10 shares: the page does not show it.
+export function subscriptionFacts(ipo) {
+  const band = ipo.band_low && ipo.band_high
+    ? (ipo.band_low === ipo.band_high ? `${fmtN(ipo.band_low)}원` : `${fmtN(ipo.band_low)}~${fmtN(ipo.band_high)}원`) : null;  // equal ends (a spac): one price
+  let price;
+  if (ipo.final_price) price = { k: '공모가', v: band ? `${fmtN(ipo.final_price)}원 (희망 ${band})` : `${fmtN(ipo.final_price)}원`, unknown: false };
+  else if (band) price = { k: '공모가', v: `희망 ${band} · 확정 전`, unknown: false };
+  else price = { k: '공모가', v: UNKNOWN, unknown: true };
+
+  const unit = ipo.final_price || ipo.band_high;
+  const key = '최소 청약 금액 · 10주 가정';
+  let minimum = { k: key, v: UNKNOWN, unknown: true };
+  if (unit && ipo.retail_deposit_pct != null) {
+    const amount = Math.round(10 * unit * ipo.retail_deposit_pct / 100);
+    minimum = { k: key, v: `${fmtN(amount)}원${ipo.final_price ? '' : ' (희망 상단 기준)'}`, unknown: false };
+  }
+
+  const refund = ipo.refund_date ? { k: '환불일', v: monthDay(ipo.refund_date), unknown: false } : { k: '환불일', v: UNKNOWN, unknown: true };
+  return [price, minimum, refund];
+}
+
+// The folded "공모 정보" rows: only what is known (a missing value leaves its row out). Amounts in 억 원, no colour for a loss.
+export function offerInfoRows(ipo) {
+  const rows = [];
+  if (ipo.offer_amount_mil != null) rows.push({ k: '공모금액', v: eok(ipo.offer_amount_mil) });
+  if (ipo.total_shares != null) {
+    const retail = ipo.retail_shares != null
+      ? ` · 일반 ${fmtN(ipo.retail_shares)}주 (${Number((ipo.retail_shares / ipo.total_shares * 100).toFixed(1))}%)` : '';
+    rows.push({ k: '공모주식', v: `총 ${fmtN(ipo.total_shares)}주${retail}` });
+  }
+  for (const b of ipo.brokers || []) {
+    if (b.shares == null) continue;
+    rows.push({ k: b.name, v: `${fmtN(b.shares)}주${b.limit_max != null ? ` · 한도 ${fmtN(b.limit_max)}주` : ''}` });
+  }
+  if (ipo.industry) rows.push({ k: '업종', v: ipo.industry });
+  if (ipo.revenue_mil != null) rows.push({ k: '매출액', v: eok(ipo.revenue_mil) });
+  if (ipo.net_income_mil != null) rows.push({ k: '순이익', v: eok(ipo.net_income_mil) });
+  if (ipo.demand_start && ipo.demand_end) rows.push({ k: '수요예측', v: `${monthDay(ipo.demand_start)}~${monthDay(ipo.demand_end)}` });
+  if (ipo.inst_count != null) rows.push({ k: '참여 기관', v: `${fmtN(ipo.inst_count)}곳` });
+  if (ipo.retail_competition != null) rows.push({ k: '일반청약 경쟁률', v: `${fmtN(Number(ipo.retail_competition.toFixed(2)))}:1` });
+  return rows;
+}

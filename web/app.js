@@ -1,4 +1,4 @@
-import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, warnText, recordRows, verdictInfo, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks, barTone } from './calendar.js';
+import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, warnText, recordRows, verdictInfo, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks, barTone, subscriptionFacts, offerInfoRows } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
@@ -288,9 +288,14 @@ function renderDetail() {
   nodes.push(...alarmNodes(ipo));
   nodes.push(...verdictNodes(ipo));
   nodes.push(...appliedNodes(ipo));
+  nodes.push(...brokerNodes(ipo));  // the broker app buttons sit right under the apply button
+  // The three facts needed to subscribe, right under the verdict and the apply button (once listed, the result block has the price).
+  if (ipo.first_close == null) nodes.push(...subscriptionFacts(ipo).map(f => kv(f.k, f.v, f.unknown ? 'unknown' : '')));
   nodes.push(kv('청약', `${md(ipo.sub_start)}~${md(ipo.sub_end)}`));
-  nodes.push(...brokerNodes(ipo));
   if (ipo.listing_date) nodes.push(kv('상장', md(ipo.listing_date)));
+  // The rest of the offering information is folded (closed by default); rows without a value are not shown.
+  const offerRows = offerInfoRows(ipo);
+  if (offerRows.length) nodes.push(h('details', { class: 'drop' }, h('summary', {}, h('span', {}, '공모 정보')), offerRows.map(r => kv(r.k, r.v))));
 
   if (!ipo.is_spac && ipo.inst_competition != null) {
     const unknown = ipo.unknown_count ? ` · 확인 불가 ${ipo.unknown_count}개` : '';
@@ -315,17 +320,11 @@ function verdictNodes(ipo) {
     const p = ipo.prediction || {};
     const wt = warnText(p.open_down || p.prob || {}, ipo.warning === 'strong');
     if (wt) nodes.push(kv('과거 검증', wt));
-    if (p.conflict) nodes.push(conflictNode(ipo));
-    nodes.push(h('p', { class: 'p' }, '경고는 손실을 피하기 위한 용도예요. 건너뛴다고 평균 수익이 오르는 건 아니에요.'));
   } else if ((ipo.prediction || {}).conflict) {
-    nodes.push(conflictNode(ipo));
+    // no warning, but the signals and the price prediction disagree
+    nodes.push(h('p', { class: 'p' }, '신호와 예측이 엇갈려요. 두 가지를 함께 보세요.'));
   }
   return nodes;
-}
-
-// Signals and the price prediction disagree: said once, up with the verdict (not hidden in the folded price section).
-function conflictNode(ipo) {
-  return h('p', { class: 'p' }, ipo.warning ? '가격 예측은 상승이지만, 하락을 미리 잡는 데는 과거에 경고가 가격 예측보다 정확했어요.' : '신호와 예측이 엇갈려요. 두 가지를 함께 보세요.');
 }
 
 function patternNodes(ipo) {

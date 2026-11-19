@@ -494,3 +494,74 @@ test('barTone: a listed stock is "done"', () => {
   assert.equal(barTone(BT({ first_close: 12000, final_price: 10000 }), '2026-11-19'), 'done');
   assert.equal(barTone(BT({ first_close: 12000, final_price: 10000, sub_end: '2026-11-18' }), '2026-11-19'), 'done');
 });
+
+import { subscriptionFacts, offerInfoRows } from './calendar.js';
+
+const UC = {
+  final_price: 19000, band_low: 19000, band_high: 23000, retail_deposit_pct: 50, refund_date: '2026-11-23',
+  offer_amount_mil: 15200, total_shares: 800000, retail_shares: 200000, industry: '소프트웨어',
+  brokers: [
+    { name: '유진투자증권', shares: 160000, limit_text: '16,000 ~ 20,000 주', limit_max: 20000 },
+    { name: '신영증권', shares: 40000, limit_text: '1,300 주', limit_max: 1300 },
+  ],
+  revenue_mil: 12345, net_income_mil: -3600, demand_start: '2026-11-09', demand_end: '2026-11-13', inst_count: 150,
+};
+
+test('subscriptionFacts: price, minimum amount (10 shares assumed) and refund day, with real values', () => {
+  assert.deepEqual(subscriptionFacts(UC), [
+    { k: '공모가', v: '19,000원 (희망 19,000~23,000원)', unknown: false },
+    { k: '최소 청약 금액 · 10주 가정', v: '95,000원', unknown: false },
+    { k: '환불일', v: '11/23', unknown: false },
+  ]);
+});
+
+test('subscriptionFacts: before the price is fixed the band top is used and said so', () => {
+  const f = subscriptionFacts({ ...UC, final_price: null });
+  assert.equal(f[0].v, '희망 19,000~23,000원 · 확정 전');
+  assert.equal(f[1].v, '115,000원 (희망 상단 기준)');  // 10 x 23,000 x 50%
+});
+
+test('subscriptionFacts: unknown values say 확인 불가 and are never guessed', () => {
+  const f = subscriptionFacts({ no: 1, name: 'x' });
+  assert.deepEqual(f.map(x => [x.v, x.unknown]), [['확인 불가', true], ['확인 불가', true], ['확인 불가', true]]);
+  assert.deepEqual(subscriptionFacts({ ...UC, retail_deposit_pct: null })[1], { k: '최소 청약 금액 · 10주 가정', v: '확인 불가', unknown: true });  // no 50% guess
+  assert.equal(subscriptionFacts({ ...UC, final_price: null, band_high: null })[1].unknown, true);
+});
+
+test('subscriptionFacts: a price without a band is shown plainly; a band without an exact price is "확정 전"', () => {
+  assert.equal(subscriptionFacts({ final_price: 8000 })[0].v, '8,000원');
+  assert.equal(subscriptionFacts({ band_low: 10500, band_high: 13000 })[0].v, '희망 10,500~13,000원 · 확정 전');
+});
+
+test('offerInfoRows: amount, shares, brokers, industry, financials, demand period, institutions', () => {
+  const rows = offerInfoRows({ ...UC, retail_competition: 128.456, inst_count: 150 });
+  assert.deepEqual(rows, [
+    { k: '공모금액', v: '152억 원' },
+    { k: '공모주식', v: '총 800,000주 · 일반 200,000주 (25%)' },
+    { k: '유진투자증권', v: '160,000주 · 한도 20,000주' },
+    { k: '신영증권', v: '40,000주 · 한도 1,300주' },
+    { k: '업종', v: '소프트웨어' },
+    { k: '매출액', v: '123억 원' },
+    { k: '순이익', v: '-36억 원' },
+    { k: '수요예측', v: '11/9~11/13' },
+    { k: '참여 기관', v: '150곳' },
+    { k: '일반청약 경쟁률', v: '128.46:1' },
+  ]);
+});
+
+test('offerInfoRows: rows without a value are left out; nothing known gives no rows', () => {
+  assert.deepEqual(offerInfoRows({ no: 1, name: 'x' }), []);
+  const rows = offerInfoRows({ offer_amount_mil: 40000, brokers: [] });
+  assert.deepEqual(rows, [{ k: '공모금액', v: '400억 원' }]);
+  assert.deepEqual(offerInfoRows({ total_shares: 5000000 }), [{ k: '공모주식', v: '총 5,000,000주' }]);
+  assert.deepEqual(offerInfoRows({ brokers: [{ name: '가증권', shares: 10000, limit_text: '-', limit_max: null }] }), [{ k: '가증권', v: '10,000주' }]);
+});
+
+test('offerInfoRows: a large amount gets a thousands separator', () => {
+  assert.equal(offerInfoRows({ offer_amount_mil: 152000 })[0].v, '1,520억 원');
+});
+
+test('subscriptionFacts: a band whose ends are equal (a spac) is shown as one price, not "2,000~2,000"', () => {
+  assert.equal(subscriptionFacts({ band_low: 2000, band_high: 2000 })[0].v, '희망 2,000원 · 확정 전');
+  assert.equal(subscriptionFacts({ final_price: 2000, band_low: 2000, band_high: 2000 })[0].v, '2,000원 (희망 2,000원)');
+});
