@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { monthGrid, barsForMonth, listForMonth, needsRefresh } from './calendar.js';
+import { monthGrid, barsForMonth, listForMonth, needsRefresh} from './calendar.js';
 
 const A = { no: 77, name: 'A', sub_start: '2026-11-27', sub_end: '2026-11-30', flag_count: 2, is_spac: false };
 
@@ -510,7 +510,7 @@ const UC = {
 test('subscriptionFacts: price, minimum amount (10 shares assumed) and refund day, with real values', () => {
   assert.deepEqual(subscriptionFacts(UC), [
     { k: '공모가', v: '19,000원 (희망 19,000~23,000원)', unknown: false },
-    { k: '최소 청약 금액 · 10주 가정', v: '95,000원', unknown: false },
+    { k: '최소 증거금 · 10주 가정', v: '95,000원 (10주 190,000원의 50%)', unknown: false },
     { k: '환불일', v: '11/23', unknown: false },
   ]);
 });
@@ -518,13 +518,13 @@ test('subscriptionFacts: price, minimum amount (10 shares assumed) and refund da
 test('subscriptionFacts: before the price is fixed the band top is used and said so', () => {
   const f = subscriptionFacts({ ...UC, final_price: null });
   assert.equal(f[0].v, '희망 19,000~23,000원 · 확정 전');
-  assert.equal(f[1].v, '115,000원 (희망 상단 기준)');  // 10 x 23,000 x 50%
+  assert.equal(f[1].v, '115,000원 (10주 230,000원의 50%) · 희망 상단 기준');  // 10 x 23,000 x 50%
 });
 
 test('subscriptionFacts: unknown values say 확인 불가 and are never guessed', () => {
   const f = subscriptionFacts({ no: 1, name: 'x' });
   assert.deepEqual(f.map(x => [x.v, x.unknown]), [['확인 불가', true], ['확인 불가', true], ['확인 불가', true]]);
-  assert.deepEqual(subscriptionFacts({ ...UC, retail_deposit_pct: null })[1], { k: '최소 청약 금액 · 10주 가정', v: '확인 불가', unknown: true });  // no 50% guess
+  assert.deepEqual(subscriptionFacts({ ...UC, retail_deposit_pct: null })[1], { k: '최소 증거금 · 10주 가정', v: '확인 불가', unknown: true });  // no 50% guess
   assert.equal(subscriptionFacts({ ...UC, final_price: null, band_high: null })[1].unknown, true);
 });
 

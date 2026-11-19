@@ -268,11 +268,12 @@ export function subscriptionFacts(ipo) {
   else price = { k: '공모가', v: UNKNOWN, unknown: true };
 
   const unit = ipo.final_price || ipo.band_high;
-  const key = '최소 청약 금액 · 10주 가정';
+  const key = '최소 증거금 · 10주 가정';
   let minimum = { k: key, v: UNKNOWN, unknown: true };
   if (unit && ipo.retail_deposit_pct != null) {
     const amount = Math.round(10 * unit * ipo.retail_deposit_pct / 100);
-    minimum = { k: key, v: `${fmtN(amount)}원${ipo.final_price ? '' : ' (희망 상단 기준)'}`, unknown: false };
+    const stake = Math.round(10 * unit);
+    minimum = { k: key, v: `${fmtN(amount)}원 (10주 ${fmtN(stake)}원의 ${ipo.retail_deposit_pct}%)${ipo.final_price ? '' : ' · 희망 상단 기준'}`, unknown: false };
   }
 
   const refund = ipo.refund_date ? { k: '환불일', v: monthDay(ipo.refund_date), unknown: false } : { k: '환불일', v: UNKNOWN, unknown: true };
