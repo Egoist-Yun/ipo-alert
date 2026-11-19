@@ -76,3 +76,18 @@ def test_collect_raises_when_demand_columns_shifted():
     pages = {**PAGES, "https://www.38.co.kr/html/fund/index.htm?o=r1": row}
     with pytest.raises(ParseError):
         collect_current(fetch=lambda u: pages.get(u, "<html></html>"), today="2026-11-17")
+
+
+def test_apply_detail_adds_the_subscription_facts_and_keeps_old_values_when_missing():
+    from ipo.collect import apply_detail
+    from ipo.parse import parse_detail
+    full = parse_detail(load("detail_2352"))
+    ipo = Ipo(no=2352, name="x", url="")
+    apply_detail(ipo, full)
+    assert (ipo.total_shares, ipo.retail_shares, ipo.retail_deposit_pct) == (800000, 200000, 50.0)
+    assert ipo.refund_date == "2026-11-23" and (ipo.demand_start, ipo.demand_end) == ("2026-11-09", "2026-11-13")
+    assert [b["name"] for b in ipo.brokers] == ["유진투자증권", "신영증권"]
+    # a later page that lacks these values must not erase what was collected before
+    empty = parse_detail("<html><body>종목명 X</body></html>")
+    apply_detail(ipo, empty)
+    assert ipo.total_shares == 800000 and ipo.refund_date == "2026-11-23" and len(ipo.brokers) == 2

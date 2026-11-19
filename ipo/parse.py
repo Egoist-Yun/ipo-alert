@@ -154,10 +154,37 @@ def _inst_count(soup) -> int | None:
     return int(m.group(1).replace(",", "")) if m else None
 
 
+def _retail_deposit_pct(soup) -> float | None:
+    """The deposit rate of the retail side (the page also shows the institutional 100%): it follows the 일반청약자 share."""
+    text = soup.get_text(" ", strip=True)
+    m = re.search(r"일반청약자\s*[\d,]+(?:\s*~\s*[\d,]+)?\s*주\s*\(\s*[\d.]+%?(?:\s*~\s*[\d.]+%?)?\s*\)\s*청약증거금율\s*:\s*(\d+(?:\.\d+)?)\s*%", text)  # shares/percent are ranges before the offer is fixed
+    return float(m.group(1)) if m else None
+
+
+def _brokers(soup) -> list[dict]:
+    """The underwriter table (인수회사 | 주식수 | 청약한도 | 기타). Not every page has it: then an empty list."""
+    for table in soup.find_all("table"):
+        if table.find("table"):
+            continue
+        rows = [[_text(c) for c in tr.find_all(["td", "th"])] for tr in table.find_all("tr")]
+        if not rows or len(rows[0]) < 3 or rows[0][0] != "인수회사":
+            continue
+        out = []
+        for cells in rows[1:]:
+            if len(cells) < 3 or not cells[0]:
+                continue
+            numbers = [int(n.replace(",", "")) for n in re.findall(r"\d[\d,]*", cells[2])]
+            out.append({"name": cells[0], "shares": _int(cells[1]), "limit_text": cells[2],
+                        "limit_max": max(numbers) if numbers else None})
+        return out
+    return []
+
+
 def parse_detail(html: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
     band = re.findall(r"\d[\d,]*", _label_value(soup, "희망공모가액") or "")
     sub_start, sub_end = _full_range(_label_value(soup, "공모청약일"))
+    demand_start, demand_end = _full_range(_label_value(soup, "수요예측일"))
     lock = _label_value(soup, "의무보유확약") or ""
 
     below_band = None
@@ -195,4 +222,11 @@ def parse_detail(html: str) -> dict:
         "old_share_pct": _old_share(_label_value(soup, "상장공모")),
         "inst_count": _inst_count(soup),
         "retail_competition": _num(_label_value(soup, "청약경쟁률") or ""),
+        "total_shares": _int(_label_value(soup, "총공모주식수") or ""),
+        "retail_shares": _int(_label_value(soup, "일반청약자") or ""),
+        "retail_deposit_pct": _retail_deposit_pct(soup),
+        "refund_date": _date(_label_value(soup, "환불일") or ""),
+        "demand_start": demand_start,
+        "demand_end": demand_end,
+        "brokers": _brokers(soup),
     }

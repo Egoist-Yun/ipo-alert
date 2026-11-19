@@ -52,3 +52,55 @@ def test_detail_old_share_from_secondary_offering_text():
 def test_detail_retail_competition_after_and_before_subscription():
     assert parse_detail(load("detail_2336"))["retail_competition"] == 13.26
     assert parse_detail(load("detail_2352"))["retail_competition"] is None
+
+
+def test_detail_subscription_facts_ucast():
+    d = parse_detail(load("detail_2352"))
+    assert d["total_shares"] == 800000
+    assert d["retail_shares"] == 200000
+    assert d["retail_deposit_pct"] == 50.0  # the retail side, not the institutional 100%
+    assert d["refund_date"] == "2026-11-23"
+    assert (d["demand_start"], d["demand_end"]) == ("2026-11-09", "2026-11-13")
+    assert d["brokers"] == [
+        {"name": "유진투자증권", "shares": 160000, "limit_text": "16,000 ~ 20,000 주", "limit_max": 20000},
+        {"name": "신영증권", "shares": 40000, "limit_text": "1,300 주", "limit_max": 1300},
+    ]
+    assert sum(b["shares"] for b in d["brokers"]) == d["retail_shares"]
+
+
+def test_detail_subscription_facts_nexi_has_no_broker_table():
+    d = parse_detail(load("detail_2336"))
+    assert d["total_shares"] == 5000000 and d["retail_shares"] == 1250000
+    assert d["retail_deposit_pct"] == 50.0
+    assert d["refund_date"] == "2026-11-06"
+    assert (d["demand_start"], d["demand_end"]) == ("2026-10-22", "2026-10-28")
+    assert d["brokers"] == []
+
+
+def test_detail_subscription_facts_missing_are_none_or_empty():
+    d = parse_detail("<html><body>종목명 X</body></html>")
+    for key in ("total_shares", "retail_shares", "retail_deposit_pct", "refund_date", "demand_start", "demand_end"):
+        assert d[key] is None, key
+    assert d["brokers"] == []
+
+
+def test_detail_broker_limit_dash_means_no_limit_number():
+    html = ("<html><body><table><tr><td>인수회사</td><td>주식수</td><td>청약한도</td><td>기타</td></tr>"
+            "<tr><td>가증권</td><td>10,000 주</td><td>-</td><td>인수</td></tr></table></body></html>")
+    assert parse_detail(html)["brokers"] == [{"name": "가증권", "shares": 10000, "limit_text": "-", "limit_max": None}]
+
+
+def test_detail_retail_deposit_pct_when_the_retail_share_is_still_a_range():
+    # before the offer is fixed the page shows 542,500~651,000 주 (25.0~30.0%) instead of one number
+    html = ("<html><body><table><tr><td>일반청약자</td><td>542,500~651,000 주 \xa0(25.0~30.0%)</td>"
+            "<td>청약증거금율 : 50%</td><td>청약 최고한도 : - 주</td></tr></table></body></html>")
+    d = parse_detail(html)
+    assert d["retail_deposit_pct"] == 50.0
+    assert d["retail_shares"] == 542500
+
+
+def test_detail_retail_deposit_pct_when_both_ends_of_the_range_carry_a_percent_sign():
+    # the live page of an offer still being fixed: 550,000~660,000 주 (25.00%~30.00%)
+    html = ("<html><body><table><tr><td>일반청약자</td><td>550,000~660,000 주 \xa0(25.00%~30.00%)</td>"
+            "<td>청약증거금율 : 50%</td></tr></table></body></html>")
+    assert parse_detail(html)["retail_deposit_pct"] == 50.0

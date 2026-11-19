@@ -32,6 +32,11 @@ def apply_detail(ipo: Ipo, detail: dict) -> None:
     _fill(ipo, **{k: detail[k] for k in (
         "band_low", "band_high", "final_price", "offer_amount_mil", "sub_start", "sub_end",
         "listing_date", "inst_competition", "lockup_pct")})
+    # subscription facts: overwritten each time, but a page that lacks one never erases what was collected before
+    for key in ("total_shares", "retail_shares", "retail_deposit_pct", "refund_date", "demand_start", "demand_end", "brokers"):
+        value = detail.get(key)
+        if value not in (None, []):
+            setattr(ipo, key, value)
     ipo.is_bio = bool(ipo.industry and _BIO.search(ipo.industry))
 
 

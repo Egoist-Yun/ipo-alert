@@ -29,6 +29,13 @@ class Ipo:
     old_share_pct: float | None = None
     inst_count: int | None = None
     retail_competition: float | None = None
+    total_shares: int | None = None
+    retail_shares: int | None = None
+    retail_deposit_pct: float | None = None      # deposit rate of the retail side (50 = 50%)
+    refund_date: str | None = None               # YYYY-MM-DD
+    demand_start: str | None = None
+    demand_end: str | None = None
+    brokers: list[dict] = field(default_factory=list)  # [{name, shares, limit_text, limit_max}]
     open_price: int | None = None
     first_close: int | None = None
     signals: list[dict] = field(default_factory=list)
