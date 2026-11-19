@@ -109,6 +109,9 @@ def _send_alerts(data_dir: Path, ipos: list, topic: str, site_url: str, now_kst:
     for kind in ("result", "eve"):
         items = groups[kind]
         if not items:
+            if kind == "result" and morning:
+                mark_digest(state, now_kst)     # nothing to send this morning: the afternoon run must not act as a second morning
+                save_state(path, state)
             continue
         try:
             send(format_digest(kind, [ipo for _, ipo in items], site_url), topic, post=post)

@@ -233,3 +233,8 @@ def test_digest_click_is_the_stock_for_one_and_the_front_page_for_several():
     assert one["title"] == "수요예측 결과 1건" and one["click"] == "https://x.github.io/ipo-alert/#2336"   # (i)
     many = format_digest("eve", [NEXI, stock(2)], "https://x.github.io/ipo-alert/")
     assert many["click"] == "https://x.github.io/ipo-alert/"
+
+
+def test_every_digest_ends_with_the_disclaimer_line():
+    for kind in ("result", "eve"):
+        assert format_digest(kind, [NEXI, stock(2)], "https://s/")["message"].split("\n")[-1] == DISCLAIMER

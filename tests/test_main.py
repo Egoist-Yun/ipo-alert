@@ -167,3 +167,54 @@ def test_before_6am_only_the_urgent_result_goes_out_and_it_is_not_the_morning_di
     sent = len(rec.calls)
     assert run(tmp_path, "t", "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
     assert len(rec.calls) == sent
+
+
+def _digest_ipo(no, **kw):
+    from dataclasses import replace
+    from tests.test_notify import NEXI
+    base = dict(no=no, name=f"종목{no}", sub_start="2026-11-25", sub_end="2026-11-26", flag_count=0, unknown_count=0,
+                signals=[], prediction=None, warning=None)
+    return replace(NEXI, **{**base, **kw})
+
+
+def _calls():
+    calls = []
+    return calls, lambda url, json, timeout: calls.append(json)
+
+
+def test_a_morning_run_without_results_still_records_the_digest_date_so_the_afternoon_waits(tmp_path):
+    from ipo.main import _send_alerts
+    calls, post = _calls()
+    waiting = _digest_ipo(1, inst_competition=None)                      # no demand result yet
+    _send_alerts(tmp_path, [waiting], "t", "https://s/", datetime(2026, 11, 19, 8, 17, tzinfo=KST), post)
+    assert calls == []
+    assert json.loads((tmp_path / "state.json").read_text("utf-8"))["digest_date"] == "2026-11-19"   # (a) nothing to send: still recorded
+    late = _digest_ipo(1)                                                # the result arrives in the afternoon
+    _send_alerts(tmp_path, [late], "t", "https://s/", datetime(2026, 11, 19, 17, 47, tzinfo=KST), post)
+    assert [c["title"] for c in calls] == []                            # not today: it waits for tomorrow's morning
+    _send_alerts(tmp_path, [late], "t", "https://s/", datetime(2026, 11, 20, 8, 17, tzinfo=KST), post)
+    assert [c["title"] for c in calls] == ["수요예측 결과 1건"]
+
+
+def test_an_urgent_result_still_goes_out_in_the_afternoon_after_an_empty_morning(tmp_path):
+    from ipo.main import _send_alerts
+    calls, post = _calls()
+    _send_alerts(tmp_path, [], "t", "https://s/", datetime(2026, 11, 19, 8, 17, tzinfo=KST), post)
+    urgent = _digest_ipo(2, sub_start="2026-11-20", sub_end="2026-11-21")   # subscribes tomorrow
+    _send_alerts(tmp_path, [urgent], "t", "https://s/", datetime(2026, 11, 19, 17, 47, tzinfo=KST), post)
+    assert "수요예측 결과 1건" in [c["title"] for c in calls]
+
+
+def test_a_failed_morning_send_is_not_recorded_and_the_afternoon_run_tries_again(tmp_path):
+    from ipo.main import _send_alerts
+    ipo = _digest_ipo(3)
+
+    def boom(url, json, timeout):
+        raise RuntimeError("ntfy down")
+    _send_alerts(tmp_path, [ipo], "t", "https://s/", datetime(2026, 11, 19, 8, 17, tzinfo=KST), boom)
+    state = json.loads((tmp_path / "state.json").read_text("utf-8"))
+    assert "digest_date" not in state and "result:3" not in state["sent"]                       # (b)
+    calls, post = _calls()
+    _send_alerts(tmp_path, [ipo], "t", "https://s/", datetime(2026, 11, 19, 17, 47, tzinfo=KST), post)
+    assert [c["title"] for c in calls] == ["수요예측 결과 1건"]
+    assert json.loads((tmp_path / "state.json").read_text("utf-8"))["digest_date"] == "2026-11-19"
