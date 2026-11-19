@@ -1,4 +1,4 @@
-import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, warnText, recordRows, verdictInfo, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks, barTone, subscriptionFacts, offerInfoRows, layoutWeek } from './calendar.js';
+import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, warnText, recordRows, verdictInfo, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks, barTone, subscriptionFacts, offerInfoRows, layoutWeek, splitSegments } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
@@ -126,7 +126,7 @@ function listRow(ipo, { big, applied } = {}) {
   const title = `${applied ? '✓ ' : ''}${ipo.name}`;
   return h('button', { class: 'row', type: 'button', onclick: () => select(ipo.no) },
     h('span', {}, h('span', { class: `name${big ? ' big' : ''}` }, title),
-      h('span', { class: 'meta' }, ds && h('span', { class: 'today' }, ds), ds && ' · ', rest)),
+      h('span', { class: 'meta' }, ds && h('span', { class: 'today' }, ds), ds && ' · ', segs(rest))),
     h('span', { class: `badge ${tone(ipo)}` }, badgeText(ipo)));
 }
 
@@ -256,8 +256,15 @@ function brokerButton(link) {
   return h('a', { class: 'btn-medium', href: action.href }, `${link.name} 앱 열기`);
 }
 
+// A text whose "·" pieces each stay on one line: the line may break only at a dot. Without a dot it is plain text.
+function segs(text) {
+  const parts = splitSegments(text);
+  if (parts.length < 2) return text;
+  return parts.flatMap((p, i) => [i ? ' · ' : '', h('span', { class: 'seg' }, p)]);
+}
+
 function kv(k, v, cls) {
-  return h('div', { class: 'kv' }, h('span', { class: 'k' }, k), h('span', { class: `v ${cls || ''}` }, v));
+  return h('div', { class: 'kv' }, h('span', { class: 'k' }, k), h('span', { class: `v ${cls || ''}` }, segs(v)));
 }
 
 function renderDetail() {

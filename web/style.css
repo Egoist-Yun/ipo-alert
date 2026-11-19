@@ -24,8 +24,9 @@
 * { box-sizing: border-box; }
 /* No grey/blue tap box on Android (Chrome, the app's WebView): the press scale below is the touch feedback. Keyboard focus keeps its ring. */
 html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
-body { margin: 0; background: var(--canvas); color: var(--body); font: 400 1rem/1.5 var(--font); }
+body { margin: 0; background: var(--canvas); color: var(--body); font: 400 1rem/1.5 var(--font); word-break: keep-all; overflow-wrap: anywhere; }  /* Korean breaks at spaces; a long unbroken run breaks only when it would overflow */
 h1, h2, h3, h4, p { margin: 0; }
+h3, h4 { text-wrap: balance; }
 button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; }
 /* Press feedback, timing approximated from a Toss app screen recording (30fps), not official values: the dim starts at
    once (so a quick tap still shows it), the shrink waits 100ms (so a quick tap does not shrink); both go in ~50ms and
@@ -117,17 +118,18 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .panel h3 { color: var(--foreground); font-size: 1.375rem; font-weight: 600; line-height: 1.5; }
 .chips { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin: var(--space-md) 0 var(--space-lg); }
 .chips .badge { background: var(--surface); color: var(--body); }
-.summary { margin: var(--space-lg) 0 var(--space-md); color: var(--foreground); font-size: 1.0625rem; font-weight: 600; line-height: 1.5; }
+.summary { text-wrap: pretty; margin: var(--space-lg) 0 var(--space-md); color: var(--foreground); font-size: 1.0625rem; font-weight: 600; line-height: 1.5; }
 .broker-buttons { display: flex; flex-wrap: wrap; gap: var(--space-md); margin: var(--space-md) 0 var(--space-lg); }
 .broker-buttons .btn-medium { margin-top: 0; }
 .summary.warn { color: var(--danger); }
 .panel h4 { margin: var(--space-xl) 0 var(--space-sm); color: var(--foreground); font-size: 1rem; font-weight: 600; }
-.kv { display: flex; justify-content: space-between; gap: var(--space-lg); padding: var(--space-md) 0; border-top: 1px solid var(--border); font-size: 0.9375rem; }
-.kv .k { color: var(--body); }
-.kv .v { color: var(--foreground); font-weight: 600; text-align: right; }
+.kv { display: flex; flex-wrap: wrap; justify-content: space-between; column-gap: var(--space-lg); row-gap: 2px; padding: var(--space-md) 0; border-top: 1px solid var(--border); font-size: 0.9375rem; }
+.kv .k { flex: 1 1 auto; color: var(--body); text-wrap: balance; }
+.kv .v { flex: 0 1 auto; margin-left: auto; color: var(--foreground); font-weight: 600; text-align: right; }  /* a value that does not fit moves whole to the next line, right-aligned */
+.seg { display: inline-block; max-width: 100%; }  /* a "·" piece is one unit: it never breaks inside unless it alone is wider than the line */
 .kv .v.flag { color: var(--danger); }
 .kv .v.unknown { color: var(--muted); font-weight: 400; }
-.p { color: var(--foreground); font-size: 0.9375rem; line-height: 1.5; }
+.p { text-wrap: pretty; color: var(--foreground); font-size: 0.9375rem; line-height: 1.5; }
 .btn-large { display: flex; align-items: center; justify-content: center; width: 100%; height: 48px; margin: var(--space-lg) 0 0; border-radius: 14px; background: var(--weak-bg); color: var(--weak-fg); font-size: 1rem; font-weight: 600; }
 .today { color: var(--weak-fg); font-weight: 600; }
 .btn-medium { display: inline-flex; align-items: center; justify-content: center; height: 38px; margin-top: var(--space-xl); padding: 0 var(--space-lg); border-radius: 10px; background: var(--weak-bg); color: var(--weak-fg); font-size: 0.9375rem; font-weight: 600; text-decoration: none; }

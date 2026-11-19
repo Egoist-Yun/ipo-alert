@@ -259,6 +259,11 @@ const UNKNOWN = '확인 불가';
 
 // The three facts needed to subscribe: price (with the band), the minimum amount, the refund day. Values that are not known
 // say 확인 불가 and are never guessed (no assumed deposit rate). The minimum assumes 10 shares: the page does not show it.
+// A text cut at " · " so each piece can be kept whole on one line (the screen wraps only at the dots).
+export function splitSegments(text) {
+  return String(text == null ? '' : text).split(' · ');
+}
+
 export function subscriptionFacts(ipo) {
   const band = ipo.band_low && ipo.band_high
     ? (ipo.band_low === ipo.band_high ? `${fmtN(ipo.band_low)}원` : `${fmtN(ipo.band_low)}~${fmtN(ipo.band_high)}원`) : null;  // equal ends (a spac): one price

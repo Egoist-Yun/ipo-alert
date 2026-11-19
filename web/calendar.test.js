@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { monthGrid, barsForMonth, listForMonth, needsRefresh} from './calendar.js';
+import { monthGrid, barsForMonth, listForMonth, needsRefresh, splitSegments } from './calendar.js';
 
 const A = { no: 77, name: 'A', sub_start: '2026-11-27', sub_end: '2026-11-30', flag_count: 2, is_spac: false };
 
@@ -657,4 +657,15 @@ test('layoutWeek (f): the number of lanes (0 when empty)', () => {
   assert.equal(layoutWeek([], []).lanes, 0);
   assert.equal(layoutWeek([B(0, 6, 'A')], []).lanes, 1);
   assert.equal(layoutWeek([B(0, 6, 'A'), B(0, 6, 'B'), B(0, 6, 'C')], [M(3, 'm')]).lanes, 4);
+});
+
+
+test('splitSegments: a value is cut at " · " only; a value without it stays one piece', () => {
+  assert.deepEqual(splitSegments('하락 74% · 23개'), ['하락 74%', '23개']);
+  assert.deepEqual(splitSegments('125,000원 (10주 250,000원의 50%) · 희망 상단 기준'), ['125,000원 (10주 250,000원의 50%)', '희망 상단 기준']);
+  assert.deepEqual(splitSegments('A · B · C'), ['A', 'B', 'C']);
+  assert.deepEqual(splitSegments('95,000원'), ['95,000원']);
+  assert.deepEqual(splitSegments('하락·상승'), ['하락·상승']);   // a dot without spaces is not a separator
+  assert.deepEqual(splitSegments(''), ['']);
+  assert.deepEqual(splitSegments(null), ['']);
 });
