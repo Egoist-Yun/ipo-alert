@@ -17,9 +17,25 @@ def _md(day: str | None) -> str | None:
     return f"{d.month}/{d.day}"
 
 
+def digest_run(state: dict, now_kst: datetime) -> bool:
+    """The morning digest goes out on the first run from 06:00 KST each day (GitHub's schedule can be hours late, so
+    "before noon" would lose a whole day). `digest_date` in the state remembers the day it was sent."""
+    return now_kst.hour >= 6 and state.get("digest_date") != now_kst.date().isoformat()
+
+
+def mark_digest(state: dict, now_kst: datetime) -> None:
+    state["digest_date"] = now_kst.date().isoformat()
+
+
+def _urgent(ipo: Ipo, today: date) -> bool:
+    """A result that arrives when the subscription starts today or tomorrow cannot wait for the next morning."""
+    return bool(ipo.sub_start) and 0 <= (date.fromisoformat(ipo.sub_start) - today).days <= 1
+
+
 def due_alerts(ipos: list[Ipo], state: dict, now_kst: datetime) -> list[tuple[str, Ipo]]:
     today = now_kst.date()
     sent = set(state.get("sent", []))
+    digest_time = digest_run(state, now_kst)
     due = []
     for ipo in ipos:
         if ipo.is_spac or ipo.inst_competition is None:
@@ -32,7 +48,7 @@ def due_alerts(ipos: list[Ipo], state: dict, now_kst: datetime) -> list[tuple[st
         if ipo.sub_end and date.fromisoformat(ipo.sub_end) < today:
             continue
         key = f"result:{ipo.no}"
-        if key not in sent:
+        if key not in sent and (digest_time or _urgent(ipo, today)):
             due.append((key, ipo))
         key = f"eve:{ipo.no}"
         if (key not in sent and ipo.sub_start and now_kst.hour >= 12
@@ -41,17 +57,12 @@ def due_alerts(ipos: list[Ipo], state: dict, now_kst: datetime) -> list[tuple[st
     return due
 
 
-def _value_text(sig: dict) -> str:
-    v, k = sig["value"], sig["key"]
-    if v is None:
-        return "확인 불가"
-    if k == "price_position":
-        return f"{v:,}원"
-    if k == "inst_competition":
-        return f"{v:.0f}대 1"
-    if k == "mood":
-        return f"{v * 100:.0f}%"
-    return f"{v}%"
+def group_alerts(due: list[tuple[str, Ipo]]) -> dict[str, list[tuple[str, Ipo]]]:
+    """Split the due alerts by kind: result and eve are sent as one digest each, pre alerts one by one."""
+    groups = {"result": [], "eve": [], "pre": []}
+    for key, ipo in due:
+        groups[key.split(":", 1)[0]].append((key, ipo))
+    return groups
 
 
 def _pattern_line(patterns: list[dict], use_open: bool) -> str | None:
@@ -68,46 +79,31 @@ def _pattern_line(patterns: list[dict], use_open: bool) -> str | None:
     return None
 
 
-def _level_text(level: str | None) -> str:
-    return {"strong": " · 강한 하락 경고", "warn": " · 하락 경고"}.get(level, "")
-
-
-def format_alert(ipo: Ipo, site_url: str) -> dict:
-    span = f"{_md(ipo.sub_start)}~{_md(ipo.sub_end)}" if ipo.sub_start and ipo.sub_end else "일정 미정"
-    lines = [f"⚠ {s['label']}: {_value_text(s)}" for s in ipo.signals if s["flag"] is True]
-    pattern = _pattern_line(ipo.patterns, use_open=False)
-    if pattern:
-        lines.append(pattern)
+def _verdict(ipo: Ipo) -> tuple[int, str]:
+    """(rank, wording): strong warning first, then warning, then the rest. No warning symbol: the words say it."""
     pred = ipo.prediction or {}
-    prob = pred.get("prob")
-    warn = bool(prob and prob.get("warn"))
-    level = ipo.warning or ("warn" if warn else None)
-    if level == "strong":
-        lines.append("강한 하락 경고: 모델과 과거 하락 패턴이 모두 하락을 가리켜요.")
-    if warn:
-        lines.append(f"하락 경고: 공모가 아래로 끝날 확률 {prob['p_down'] * 100:.0f}% "
-                     f"(경고 기준 {prob['threshold'] * 100:.0f}%)")
-    elif prob:
-        lines.append(f"공모가 아래로 끝날 확률 {prob['p_down'] * 100:.0f}%")
-    parts = []
-    for key, label in (("open", "시초가 예상"), ("close", "종가 예상")):
-        if pred.get(key):
-            parts.append(f"{label} {pred[key]['return'] * 100:+.0f}% (±{pred[key]['mae'] * 100:.0f}%p)")
-    if parts:
-        lines.append(" · ".join(parts))
-    if pred.get("knn"):
-        lines.append(f"비슷한 {pred['knn']['n']}개 중 {pred['knn']['down_count']}개 하락")
-    if pred.get("conflict"):
-        lines.append("가격 예측은 상승이지만, 하락을 미리 잡는 데는 과거에 경고가 가격 예측보다 정확했어요." if level else "신호와 예측이 엇갈려요. 두 가지를 함께 보세요.")
-    if ipo.unknown_count:
-        lines.append(f"확인 불가 {ipo.unknown_count}개")
+    model_warn = bool((pred.get("open_down") or pred.get("prob") or {}).get("warn"))
+    if ipo.warning == "strong":
+        return 0, "강한 하락 경고"
+    if ipo.warning == "warn" or model_warn:
+        return 1, "하락 경고"
+    if ipo.flag_count > 0:
+        return 2, f"경고 없음 (신호 {ipo.flag_count}개)"
+    if ipo.unknown_count >= 2:
+        return 2, f"경고 없음 (확인 불가 {ipo.unknown_count}개)"
+    return 2, "경고 없음"
+
+
+def format_digest(kind: str, ipos: list[Ipo], site_url: str) -> dict:
+    """One summary alert for several stocks (kind: 'result' = demand-forecast results, 'eve' = subscriptions tomorrow)."""
+    title = f"수요예측 결과 {len(ipos)}건" if kind == "result" else f"내일 청약 {len(ipos)}건"
+    lines = []
+    for ipo in sorted(ipos, key=lambda i: (_verdict(i)[0], i.sub_start or "", i.no)):
+        span = f"{_md(ipo.sub_start)}~{_md(ipo.sub_end)}" if ipo.sub_start and ipo.sub_end else "일정 미정"
+        lines.append(f"{ipo.name} · {_verdict(ipo)[1]} · 청약 {span}")
     lines.append(DISCLAIMER)
-    unknown = f" · 확인 불가 {ipo.unknown_count}개" if ipo.flag_count == 0 and ipo.unknown_count else ""
-    return {
-        "title": f"{ipo.name} ⚠{ipo.flag_count}개{unknown}{_level_text(level)} · 청약 {span}",
-        "message": "\n".join(lines),
-        "click": f"{site_url.rstrip('/')}/#{ipo.no}",
-    }
+    base = site_url.rstrip("/")
+    return {"title": title, "message": "\n".join(lines), "click": f"{base}/#{ipos[0].no}" if len(ipos) == 1 else f"{base}/"}
 
 
 def format_pre_alert(ipo: Ipo, site_url: str) -> dict:

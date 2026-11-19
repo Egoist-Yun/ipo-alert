@@ -40,7 +40,11 @@ def test_run_writes_ipos_json_and_alerts_once(tmp_path):
     assert data["disclaimer"].startswith("투자 권유가 아닌")
     ucast = next(i for i in data["ipos"] if i["name"] == "유캐스트")
     assert ucast["flag_count"] >= 1 and ucast["prediction"] is not None
-    assert any("유캐스트" in c["title"] for c in rec.calls)
+    digests = [c for c in rec.calls if c["title"].startswith("수요예측 결과")]
+    assert len(digests) == 1 and "유캐스트" in digests[0]["message"]          # one digest, not one alert per stock
+    assert not any("⚠" in c["title"] or "⚠" in c["message"] for c in rec.calls)
+    state = json.loads((tmp_path / "state.json").read_text("utf-8"))
+    assert state["digest_date"] == "2026-11-17" and any(k.startswith("result:") for k in state["sent"])
     assert (tmp_path / "history.json").exists() and (tmp_path / "state.json").exists()
     before = len(rec.calls)
     assert run(tmp_path, "t", "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
@@ -136,3 +140,30 @@ def test_a_ledger_failure_never_breaks_the_calendar(tmp_path, monkeypatch):
     assert run(tmp_path, None, "", NOW, fetch=fake_fetch, post=Rec()) == 0
     data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
     assert data["ledger"] is None and data["ipos"]
+
+
+def test_a_failed_digest_send_keeps_the_keys_and_the_digest_date_unchanged(tmp_path):
+    def boom(url, json, timeout):
+        raise RuntimeError("ntfy down")
+    assert run(tmp_path, "t", "https://s/", NOW, fetch=fake_fetch, post=boom) == 0
+    state = json.loads((tmp_path / "state.json").read_text("utf-8")) if (tmp_path / "state.json").exists() else {"sent": []}
+    assert not any(k.startswith(("result:", "eve:")) for k in state.get("sent", []))
+    assert "digest_date" not in state
+    rec = Rec()                                    # the next run (ntfy back) sends the same digest
+    assert run(tmp_path, "t", "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
+    assert any(c["title"].startswith("수요예측 결과") for c in rec.calls)
+
+
+def test_before_6am_only_the_urgent_result_goes_out_and_it_is_not_the_morning_digest(tmp_path):
+    early = datetime(2026, 11, 17, 5, 59, tzinfo=KST)
+    rec = Rec()
+    assert run(tmp_path, "t", "https://s/", early, fetch=fake_fetch, post=rec) == 0
+    # the fixture's stock subscribes tomorrow (11/18): its result cannot wait, so it goes out even before 06:00
+    assert [c["title"] for c in rec.calls] == ["수요예측 결과 1건"] and "유캐스트" in rec.calls[0]["message"]
+    state = json.loads((tmp_path / "state.json").read_text("utf-8"))
+    assert "digest_date" not in state                          # an urgent send is not the day's digest
+    assert run(tmp_path, "t", "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
+    assert [c["title"] for c in rec.calls] == ["수요예측 결과 1건", "내일 청약 1건"]   # 18:00: only the eve digest is new
+    sent = len(rec.calls)
+    assert run(tmp_path, "t", "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
+    assert len(rec.calls) == sent

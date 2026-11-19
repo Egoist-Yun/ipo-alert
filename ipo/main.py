@@ -12,7 +12,7 @@ from ipo import config
 from ipo.collect import collect_current, market_mood
 from ipo.fetch import get_html
 from ipo.history import load_history, save_history, update_history
-from ipo.notify import (due_alerts, failure_alert, format_alert, format_pre_alert, load_state, mark_sent,
+from ipo.notify import (digest_run, due_alerts, failure_alert, format_digest, format_pre_alert, group_alerts, load_state, mark_digest, mark_sent,
                         save_state,
                         send)
 from ipo.patterns import match_patterns, pattern_stats, warning_level
@@ -99,6 +99,37 @@ def _update_ledger(data_dir: Path, ipos: list, now_kst: datetime) -> dict | None
         return None
 
 
+def _send_alerts(data_dir: Path, ipos: list, topic: str, site_url: str, now_kst: datetime, post) -> None:
+    """Result and eve alerts go out as one digest each, then the pre-listing alerts one by one. A key is remembered (and
+    the state saved) only after its send succeeded, so a failed send is tried again on the next run."""
+    path = data_dir / "state.json"
+    state = load_state(path)
+    morning = digest_run(state, now_kst)  # decided before anything is marked
+    groups = group_alerts(due_alerts(ipos, state, now_kst))
+    for kind in ("result", "eve"):
+        items = groups[kind]
+        if not items:
+            continue
+        try:
+            send(format_digest(kind, [ipo for _, ipo in items], site_url), topic, post=post)
+        except Exception:
+            traceback.print_exc()
+            continue
+        mark_sent(state, items)
+        if kind == "result" and morning:
+            mark_digest(state, now_kst)  # only a digest that really went out counts as today's
+        save_state(path, state)
+    for key, ipo in groups["pre"]:
+        try:
+            send(format_pre_alert(ipo, site_url), topic, post=post)
+        except Exception:
+            traceback.print_exc()
+            continue
+        mark_sent(state, [(key, ipo)])
+        save_state(path, state)
+    save_state(path, state)
+
+
 def run(data_dir: Path, topic: str | None, site_url: str, now_kst: datetime,
         fetch=get_html, post=requests.post) -> int:
     data_dir = Path(data_dir)
@@ -118,17 +149,7 @@ def run(data_dir: Path, topic: str | None, site_url: str, now_kst: datetime,
         return 1
 
     if topic:
-        state = load_state(data_dir / "state.json")
-        for key, ipo in due_alerts(ipos, state, now_kst):
-            try:
-                payload = format_pre_alert(ipo, site_url) if key.startswith("pre:") else format_alert(ipo, site_url)
-                send(payload, topic, post=post)
-            except Exception:
-                traceback.print_exc()
-                continue
-            mark_sent(state, [(key, ipo)])
-            save_state(data_dir / "state.json", state)
-        save_state(data_dir / "state.json", state)
+        _send_alerts(data_dir, ipos, topic, site_url, now_kst, post)
     return 0
 
 
