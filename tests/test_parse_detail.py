@@ -97,6 +97,7 @@ def test_detail_retail_deposit_pct_when_the_retail_share_is_still_a_range():
     d = parse_detail(html)
     assert d["retail_deposit_pct"] == 50.0
     assert d["retail_shares"] == 542500
+    assert d["retail_shares_high"] == 651000  # the upper end of the range
 
 
 def test_detail_retail_deposit_pct_when_both_ends_of_the_range_carry_a_percent_sign():
@@ -104,3 +105,15 @@ def test_detail_retail_deposit_pct_when_both_ends_of_the_range_carry_a_percent_s
     html = ("<html><body><table><tr><td>일반청약자</td><td>550,000~660,000 주 \xa0(25.00%~30.00%)</td>"
             "<td>청약증거금율 : 50%</td></tr></table></body></html>")
     assert parse_detail(html)["retail_deposit_pct"] == 50.0
+
+
+def test_detail_retail_shares_high_is_none_for_a_single_value_and_when_missing():
+    assert parse_detail(load("detail_2352"))["retail_shares_high"] is None
+    assert parse_detail(load("detail_2336"))["retail_shares_high"] is None
+    assert parse_detail("<html><body>종목명 X</body></html>")["retail_shares_high"] is None
+
+
+def test_detail_retail_shares_range_in_a_plain_cell():
+    html = "<html><body><table><tr><td>일반청약자</td><td>500,000~600,000 주  (25.00%~30.00%)</td></tr></table></body></html>"
+    d = parse_detail(html)
+    assert (d["retail_shares"], d["retail_shares_high"]) == (500000, 600000)

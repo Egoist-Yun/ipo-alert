@@ -91,3 +91,20 @@ def test_apply_detail_adds_the_subscription_facts_and_keeps_old_values_when_miss
     empty = parse_detail("<html><body>종목명 X</body></html>")
     apply_detail(ipo, empty)
     assert ipo.total_shares == 800000 and ipo.refund_date == "2026-11-23" and len(ipo.brokers) == 2
+
+
+def test_apply_detail_resets_retail_shares_high_when_the_range_becomes_a_single_value():
+    from ipo.collect import apply_detail
+    from ipo.parse import parse_detail
+    ipo = Ipo(no=1, name="x", url="", retail_shares=542500, retail_shares_high=651000)
+    fixed = parse_detail(load("detail_2352"))  # retail 200,000 (a single value)
+    apply_detail(ipo, fixed)
+    assert (ipo.retail_shares, ipo.retail_shares_high) == (200000, None)
+
+
+def test_apply_detail_keeps_retail_shares_high_when_the_page_has_no_retail_value_at_all():
+    from ipo.collect import apply_detail
+    from ipo.parse import parse_detail
+    ipo = Ipo(no=1, name="x", url="", retail_shares=542500, retail_shares_high=651000)
+    apply_detail(ipo, parse_detail("<html><body>종목명 X</body></html>"))
+    assert (ipo.retail_shares, ipo.retail_shares_high) == (542500, 651000)

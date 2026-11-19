@@ -31,6 +31,7 @@ class Ipo:
     retail_competition: float | None = None
     total_shares: int | None = None
     retail_shares: int | None = None
+    retail_shares_high: int | None = None        # upper end while the retail share is still a range (before the offer is fixed)
     retail_deposit_pct: float | None = None      # deposit rate of the retail side (50 = 50%)
     refund_date: str | None = None               # YYYY-MM-DD
     demand_start: str | None = None

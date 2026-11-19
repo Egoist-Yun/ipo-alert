@@ -37,6 +37,9 @@ def apply_detail(ipo: Ipo, detail: dict) -> None:
         value = detail.get(key)
         if value not in (None, []):
             setattr(ipo, key, value)
+    # the upper end only exists while the retail share is a range: once the offer is fixed it must go back to None
+    if detail.get("retail_shares") is not None:
+        ipo.retail_shares_high = detail.get("retail_shares_high")
     ipo.is_bio = bool(ipo.industry and _BIO.search(ipo.industry))
 
 

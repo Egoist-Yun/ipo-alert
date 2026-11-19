@@ -154,6 +154,14 @@ def _inst_count(soup) -> int | None:
     return int(m.group(1).replace(",", "")) if m else None
 
 
+def _share_range(text: str | None) -> tuple[int | None, int | None]:
+    """'542,500~651,000 주 (25.0~30.0%)' -> (542500, 651000); a single value -> (value, None); nothing -> (None, None)."""
+    m = re.search(r"([\d,]+)\s*~\s*([\d,]+)\s*주", text or "")
+    if m:
+        return int(m.group(1).replace(",", "")), int(m.group(2).replace(",", ""))
+    return _int(text or ""), None
+
+
 def _retail_deposit_pct(soup) -> float | None:
     """The deposit rate of the retail side (the page also shows the institutional 100%): it follows the 일반청약자 share."""
     text = soup.get_text(" ", strip=True)
@@ -185,6 +193,7 @@ def parse_detail(html: str) -> dict:
     band = re.findall(r"\d[\d,]*", _label_value(soup, "희망공모가액") or "")
     sub_start, sub_end = _full_range(_label_value(soup, "공모청약일"))
     demand_start, demand_end = _full_range(_label_value(soup, "수요예측일"))
+    retail_shares, retail_shares_high = _share_range(_label_value(soup, "일반청약자"))
     lock = _label_value(soup, "의무보유확약") or ""
 
     below_band = None
@@ -223,7 +232,8 @@ def parse_detail(html: str) -> dict:
         "inst_count": _inst_count(soup),
         "retail_competition": _num(_label_value(soup, "청약경쟁률") or ""),
         "total_shares": _int(_label_value(soup, "총공모주식수") or ""),
-        "retail_shares": _int(_label_value(soup, "일반청약자") or ""),
+        "retail_shares": retail_shares,
+        "retail_shares_high": retail_shares_high,
         "retail_deposit_pct": _retail_deposit_pct(soup),
         "refund_date": _date(_label_value(soup, "환불일") or ""),
         "demand_start": demand_start,
