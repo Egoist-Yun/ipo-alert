@@ -460,3 +460,37 @@ test('listingMarks: sorted by date, then stock number; two stocks on the same da
   const ipos = [LM(9, '2026-11-26'), LM(3, '2026-11-26'), LM(5, '2026-11-20')];
   assert.deepEqual(listingMarks(ipos, new Set([9, 3, 5]), 2026, 11).map(m => [m.date, m.no]), [['2026-11-20', 5], ['2026-11-26', 3], ['2026-11-26', 9]]);
 });
+
+import { barTone } from './calendar.js';
+
+const BT = (o = {}) => ({ no: 1, name: 'S', sub_start: '2026-11-17', sub_end: '2026-11-20', inst_competition: 800, flag_count: 0, unknown_count: 0, is_spac: false, ...o });
+
+test('barTone: a stock still to come is blue (empty class) whatever its signals: waiting, signals only, none, spac', () => {
+  assert.equal(barTone(BT(), '2026-11-19'), '');
+  assert.equal(barTone(BT({ inst_competition: null }), '2026-11-19'), '');       // waiting for the demand result
+  assert.equal(barTone(BT({ flag_count: 3 }), '2026-11-19'), '');                // signals without a warning
+  assert.equal(barTone(BT({ unknown_count: 4 }), '2026-11-19'), '');
+  assert.equal(barTone(BT({ is_spac: true, sub_end: '2026-11-25' }), '2026-11-19'), '');
+});
+
+test('barTone: a decline warning is the only thing that turns a coming bar red', () => {
+  assert.equal(barTone(BT({ warning: 'strong' }), '2026-11-19'), 'risk');
+  assert.equal(barTone(BT({ warning: 'warn' }), '2026-11-19'), 'risk');
+  assert.equal(barTone(BT({ prediction: { prob: { warn: true } } }), '2026-11-19'), 'risk');
+});
+
+test('barTone: on the deadline day the stock still counts as coming (a warning stays red)', () => {
+  assert.equal(barTone(BT({ sub_end: '2026-11-19', warning: 'strong' }), '2026-11-19'), 'risk');
+  assert.equal(barTone(BT({ sub_end: '2026-11-19' }), '2026-11-19'), '');
+});
+
+test('barTone: the day after the deadline every bar is "done" (grey), warned, waiting or spac alike', () => {
+  assert.equal(barTone(BT({ sub_end: '2026-11-18', warning: 'strong' }), '2026-11-19'), 'done');
+  assert.equal(barTone(BT({ sub_end: '2026-11-18', inst_competition: null }), '2026-11-19'), 'done');
+  assert.equal(barTone(BT({ is_spac: true, sub_end: '2026-11-18' }), '2026-11-19'), 'done');
+});
+
+test('barTone: a listed stock is "done"', () => {
+  assert.equal(barTone(BT({ first_close: 12000, final_price: 10000 }), '2026-11-19'), 'done');
+  assert.equal(barTone(BT({ first_close: 12000, final_price: 10000, sub_end: '2026-11-18' }), '2026-11-19'), 'done');
+});

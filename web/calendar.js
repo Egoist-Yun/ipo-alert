@@ -234,3 +234,11 @@ export function listingMarks(ipos, applied, year, month) {
     .map(i => ({ no: i.no, name: i.name, date: i.listing_date, listed: i.first_close != null }))
     .sort((a, b) => a.date.localeCompare(b.date) || a.no - b.no);
 }
+
+// The colour class of a calendar bar: colour only for what is still ahead. A subscription that is over (sub_end before
+// today, KST date strings) or a stock that has listed is "done" (grey: past). A stock still to come is red when it has a
+// decline warning (the deadline day itself still counts as coming) and blue (empty class) otherwise.
+export function barTone(ipo, todayIso) {
+  if (ipo.first_close != null || (ipo.sub_end && ipo.sub_end < todayIso)) return 'done';
+  return badgeInfo(ipo).tone === 'risk' ? 'risk' : '';
+}

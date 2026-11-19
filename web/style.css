@@ -11,7 +11,6 @@
   --weak-fg: #1b64da;
   --danger: #d22030;
   --danger-weak: #ffeeee;
-  --border-strong: #d1d6db;
   --focus-inner: #8ac0ff;
   --focus-outer: #b8d9ff;
   --space-xs: 4px;
@@ -60,12 +59,13 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
   box-sizing: content-box; border-top: 4px solid transparent; border-bottom: 4px solid transparent; background-clip: padding-box; }
 .bar.small { font-size: 11px; }
 .bar.risk { background-color: var(--danger-weak); color: var(--danger); }
-.bar.wait, .bar.spac { background-color: var(--surface); color: var(--body); }
 /* my listing day (sell day) on the subscription calendar: a two-letter one-day mark; "now" = it lists today; "done" = already listed */
 .bar.listing { background-color: var(--weak-bg); color: var(--weak-fg); text-align: center; padding: 0 2px; }
 .bar.listing.now { background-color: var(--weak-fg); color: var(--canvas); }
-/* past (listed) bars: no fill and a 1px inner outline, so they differ from the grey "waiting" bars; selected/focus below win */
-.bar.done { background-color: transparent; box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--body); }
+/* past bars (subscription over, or already listed): grey; colour is only for what is still ahead. Selected/focus below win. */
+.bar.done { background-color: var(--surface); color: var(--body); }
+.bar.cont-l { margin-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.bar.cont-r { margin-right: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .bar.selected { box-shadow: inset 0 0 0 2px var(--primary); }  /* inset: follows the visible 24px, not the 32px tap area */
 .bar:focus-visible { box-shadow: inset 0 0 0 1px var(--focus-inner), inset 0 0 0 3px var(--focus-outer); }
 

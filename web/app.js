@@ -1,4 +1,4 @@
-import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, warnText, recordRows, verdictInfo, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks } from './calendar.js';
+import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, warnText, recordRows, verdictInfo, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks, barTone } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
@@ -73,7 +73,8 @@ function renderCalendar() {
       .map(x => ({ ...x, c0: week.indexOf(x.s), c1: week.indexOf(x.e) }));
     // A listing mark is a one-day piece on its date, laid out in the same lanes as the subscription bars.
     const markSegs = marks.filter(m => week.includes(m.date)).map(m => ({ mark: m, c0: week.indexOf(m.date), c1: week.indexOf(m.date) }));
-    const segs = [...barSegs, ...markSegs].sort((a, b) => a.c0 - b.c0 || a.c1 - b.c1);
+    // On the same start day a subscription bar goes before a listing mark (a mark is one day wide and would otherwise push the bar to the next lane).
+    const segs = [...barSegs, ...markSegs].sort((a, b) => a.c0 - b.c0 || (!!a.mark - !!b.mark) || a.c1 - b.c1);
     const laneEnd = [];
     const el = h('div', { class: 'week' },
       week.map(d => h('div', { class: `day${d === today ? ' today' : ''}${d ? '' : ' empty'}` }, d ? Number(d.slice(8)) : '0')));
@@ -97,9 +98,13 @@ function renderCalendar() {
       const ipo = state.ipos.find(i => i.no === seg.b.no);
       // A one-day piece of a bar that began in an earlier week has no room for text: colour only.
       const continuationOneDay = seg.s > seg.b.start && seg.c0 === seg.c1;
-      const label = barLabel({ name: seg.b.name, risk: tone(ipo) === 'risk', applied: state.applied.has(ipo.no), continuationOneDay });
+      const bt = barTone(ipo, today);  // a subscription that is over is "done" (and carries no warning mark)
+      const label = barLabel({ name: seg.b.name, risk: bt === 'risk', applied: state.applied.has(ipo.no), continuationOneDay });
+      // A bar that crosses a week edge is cut square on that side and runs to the cell edge: it reads as "continues".
+      const contL = seg.s > seg.b.start ? ' cont-l' : '';
+      const contR = seg.e < seg.b.end ? ' cont-r' : '';
       const bar = h('button', {
-        class: `bar ${tone(ipo)}${state.selected === seg.b.no ? ' selected' : ''}`,
+        class: `bar ${bt}${contL}${contR}${state.selected === seg.b.no ? ' selected' : ''}`,
         type: 'button',
         style: `grid-column:${seg.c0 + 1} / ${seg.c1 + 2};grid-row:${lane + 2}`,
         'aria-label': `${state.applied.has(ipo.no) ? '청약 신청함, ' : ''}${seg.b.name}, ${badgeText(ipo)}, 청약 ${md(ipo.sub_start)}~${md(ipo.sub_end)}`,
