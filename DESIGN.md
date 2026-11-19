@@ -431,6 +431,10 @@ Preserve state clarity and reduced-motion compatibility. Label any exact animati
 
 **Verified:** 2026-09-17 · `https://developers-apps-in-toss.toss.im/design/components.md` (first-party documentation query), `https://developers-apps-in-toss.toss.im/design/consumer-ux-guide.md`
 
+## Local extensions (this web app)
+
+Three deviations from the sourced TDS values, recorded here so they are not mistaken for verified TDS. **Contrast:** for web accessibility (WCAG AA, 4.5:1 for text) the web app uses grey600 `#6b7684` for muted text instead of grey500 `#8b95a1`, and red700 `#d22030` for danger text instead of red600 `#e42939`; both are neighbouring steps of the same Toss palette, not new colours. **Toast:** a short message that fades in at the bottom and removes itself after about three seconds is used for confirmations; TDS lists a Toast component but publishes no specification, and the "Don't invent toasts" rule below would otherwise forbid it, so it is marked as an extension (tokens only, no shadow). **Press feedback:** the pressed state also dims to opacity 0.8 (the TDS button spec says the fill is unchanged); the 0.8 comes from measuring a Toss app screen recording at 30fps and is approximate, not an official value.
+
 ## Components
 
 ### TDS Mobile Button

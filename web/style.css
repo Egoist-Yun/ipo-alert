@@ -4,12 +4,12 @@
   --canvas: #ffffff;
   --foreground: #191f28;
   --body: #4e5968;
-  --muted: #8b95a1;
+  --muted: #6b7684;
   --surface: #f2f4f6;
   --border: #e5e8eb;
   --weak-bg: #e8f3ff;
   --weak-fg: #1b64da;
-  --danger: #e42939;
+  --danger: #d22030;
   --danger-weak: #ffeeee;
   --focus-inner: #8ac0ff;
   --focus-outer: #b8d9ff;
@@ -49,17 +49,20 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .btn-small { height: 32px; min-width: 44px; padding: 0 var(--space-lg); border-radius: 8px; background: var(--weak-bg); color: var(--weak-fg); font-size: 0.9375rem; font-weight: 600; }
 
 .dow { display: grid; grid-template-columns: repeat(7, 1fr); padding-bottom: var(--space-sm); color: var(--muted); font-size: 0.75rem; line-height: 1.5; text-align: center; }
-.week { display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: 24px; row-gap: var(--space-xs); padding: var(--space-xs) 0 var(--space-md); border-top: 1px solid var(--border); }
-.day { grid-row: 1; height: 24px; color: var(--body); font-size: 0.8125rem; line-height: 24px; text-align: center; }
+.week { display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: 32px; row-gap: 0; padding: var(--space-xs) 0 var(--space-md); border-top: 1px solid var(--border); }
+.day { grid-row: 1; align-self: center; height: 24px; color: var(--body); font-size: 0.8125rem; line-height: 24px; text-align: center; }
 .day.today { color: var(--weak-fg); font-weight: 700; }
 .day.empty { visibility: hidden; }
 
-.bar { min-width: 0; margin: 0 var(--space-xs); padding: 0 var(--space-sm); border-radius: 6px; background: var(--weak-bg); color: var(--weak-fg); font-size: 0.75rem; font-weight: 600; line-height: 24px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar { min-width: 0; margin: 0 var(--space-xs); padding: 0 var(--space-sm); border-radius: 6px; background: var(--weak-bg); color: var(--weak-fg); font-size: 0.75rem; font-weight: 600; line-height: 24px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  /* the visible bar stays 24px; transparent 4px borders widen the tap area to 32px */
+  box-sizing: content-box; border-top: 4px solid transparent; border-bottom: 4px solid transparent; background-clip: padding-box; }
 .bar.small { font-size: 11px; }
-.bar.risk { background: var(--danger-weak); color: var(--danger); }
-.bar.wait, .bar.spac { background: var(--surface); color: var(--body); }
-.bar.spac { color: var(--muted); }
-.bar.selected { outline: 2px solid var(--primary); outline-offset: -2px; }
+.bar.risk { background-color: var(--danger-weak); color: var(--danger); }
+.bar.wait, .bar.spac, .bar.done { background-color: var(--surface); color: var(--body); }
+.bar.spac { color: var(--body); }
+.bar.selected { box-shadow: inset 0 0 0 2px var(--primary); }  /* inset: follows the visible 24px, not the 32px tap area */
+.bar:focus-visible { box-shadow: inset 0 0 0 1px var(--focus-inner), inset 0 0 0 3px var(--focus-outer); }
 
 .list { margin-top: var(--space-xl); }
 .group { margin-bottom: var(--space-xl); }
@@ -75,7 +78,7 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .row .meta { display: block; color: var(--muted); font-size: 0.8125rem; line-height: 1.5; }
 .badge { flex: none; padding: 0 var(--space-md); border-radius: 6px; background: var(--weak-bg); color: var(--weak-fg); font-size: 0.75rem; font-weight: 600; line-height: 24px; }
 .badge.risk { background: var(--danger-weak); color: var(--danger); }
-.badge.wait { background: var(--surface); color: var(--body); }
+.badge.wait, .badge.done { background: var(--surface); color: var(--body); }
 
 /* Sub-screen header: a back chevron and the screen's name, pinned to the top while the screen scrolls (extension: not in TDS).
    Its top padding / negative margin keep the status-bar inset covered, so nothing shows through above it. */
@@ -99,9 +102,6 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 @media (prefers-reduced-motion: reduce) { .sub-in, .sub-out, .list-away, .list-back { animation: none; } }
 @media (prefers-reduced-motion: reduce) { button, a.btn-medium, button:active, a.btn-medium:active { transition: none; } }
 .detail { margin-top: var(--space-lg); }
-.title-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-lg); }
-.title-row h3 { min-width: 0; }
-.title-row .btn-small { flex: none; }
 .detail:empty { display: none; }
 .record { margin-top: var(--space-lg); }
 .record-link { margin-top: var(--space-xl); }
@@ -122,6 +122,8 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .kv .v.flag { color: var(--danger); }
 .kv .v.unknown { color: var(--muted); font-weight: 400; }
 .p { color: var(--foreground); font-size: 0.9375rem; line-height: 1.5; }
+.btn-large { display: flex; align-items: center; justify-content: center; width: 100%; height: 48px; margin: var(--space-lg) 0 0; border-radius: 14px; background: var(--weak-bg); color: var(--weak-fg); font-size: 1rem; font-weight: 600; }
+.today { color: var(--weak-fg); font-weight: 600; }
 .btn-medium { display: inline-flex; align-items: center; justify-content: center; height: 38px; margin-top: var(--space-xl); padding: 0 var(--space-lg); border-radius: 10px; background: var(--weak-bg); color: var(--weak-fg); font-size: 0.9375rem; font-weight: 600; text-decoration: none; }
 
 .foot { margin-top: var(--space-xxl); color: var(--muted); font-size: 0.75rem; line-height: 1.5; }

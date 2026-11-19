@@ -52,7 +52,7 @@ test('badgeInfo: mostly unknown is grey, never "no signal"', () => {
   assert.deepEqual(badgeInfo({ ...base, unknown_count: 4 }), { text: '확인 불가 4', tone: 'wait' });
 });
 test('badgeInfo: flags win', () => {
-  assert.deepEqual(badgeInfo({ ...base, flag_count: 3, unknown_count: 1 }), { text: '⚠ 3', tone: 'risk' });
+  assert.deepEqual(badgeInfo({ ...base, flag_count: 3, unknown_count: 1 }), { text: '신호 3개', tone: 'wait' });
 });
 test('badgeInfo: waiting and spac', () => {
   assert.deepEqual(badgeInfo({ ...base, inst_competition: null }), { text: '대기 중', tone: 'wait' });
@@ -72,7 +72,7 @@ test('badgeInfo: model warning shows even when signals are few', () => {
 
 test('badgeInfo: after subscription the open-price judgment replaces the pre-subscription one', () => {
   const calmAfter = { ...base, flag_count: 1, prediction: { prob: { warn: true }, open_down: { warn: false } } };
-  assert.deepEqual(badgeInfo(calmAfter), { text: '⚠ 1', tone: 'risk' });
+  assert.deepEqual(badgeInfo(calmAfter), { text: '신호 1개', tone: 'wait' });
 });
 
 test('badgeInfo: warning level from the data wins', () => {
@@ -133,9 +133,9 @@ test('recordRows: enough declines drops the too-early note', () => {
 import { verdictInfo } from './calendar.js';
 
 test('badgeInfo: a listed stock shows its actual first-day return', () => {
-  assert.deepEqual(badgeInfo({ ...base, first_close: 6000, final_price: 10000, flag_count: 3 }), { text: '-40%', tone: 'risk' });
-  assert.deepEqual(badgeInfo({ ...base, first_close: 16500, final_price: 10000 }), { text: '+65%', tone: '' });
-  assert.deepEqual(badgeInfo({ ...base, first_close: 10000, final_price: 10000 }), { text: '+0%', tone: '' });
+  assert.deepEqual(badgeInfo({ ...base, first_close: 6000, final_price: 10000, flag_count: 3 }), { text: '-40%', tone: 'done' });
+  assert.deepEqual(badgeInfo({ ...base, first_close: 16500, final_price: 10000 }), { text: '+65%', tone: 'done' });
+  assert.deepEqual(badgeInfo({ ...base, first_close: 10000, final_price: 10000 }), { text: '+0%', tone: 'done' });
 });
 
 const waiting = { ...base, inst_competition: null };
@@ -143,12 +143,12 @@ const counts = { warned: 15, caught: 10, n_down: 18, strong_warned: 10, strong_c
 
 test('verdictInfo: strong warning names the counts behind it', () => {
   const ipo = { ...base, flag_count: 3, warning: 'strong', prediction: { prob: counts } };
-  assert.deepEqual(verdictInfo(ipo), { text: '강한 하락 경고 · 경고 10개 중 7개 적중', tone: 'risk' });
+  assert.deepEqual(verdictInfo(ipo), { text: '강한 하락 경고', tone: 'risk' });
 });
 
 test('verdictInfo: after the subscription the open-price judgment supplies the counts', () => {
   const ipo = { ...base, warning: 'warn', prediction: { prob: counts, open_down: { warned: 16, caught: 10, n_down: 12 } } };
-  assert.deepEqual(verdictInfo(ipo), { text: '하락 경고 · 경고 16개 중 10개 적중', tone: 'risk' });
+  assert.deepEqual(verdictInfo(ipo), { text: '하락 경고', tone: 'risk' });
 });
 
 test('verdictInfo: a warning without counts (older data) is still stated', () => {
@@ -384,4 +384,47 @@ test('markToast: in the app, a stock without a listing date gets a promise inste
 
 test('markToast: in the app, a listing date that is already past gets no toast', () => {
   assert.equal(markToast({ native: true, alarmOff: false, hasAlarm: false, hasListingDate: true }), null);
+});
+
+test('badgeInfo: "risk" means a pre-listing decline warning only (strong, warn, or the model warning)', () => {
+  assert.equal(badgeInfo({ ...base, warning: 'strong' }).tone, 'risk');
+  assert.equal(badgeInfo({ ...base, warning: 'warn' }).tone, 'risk');
+  assert.equal(badgeInfo({ ...base, prediction: { prob: { warn: true } } }).tone, 'risk');
+  assert.equal(badgeInfo({ ...base, flag_count: 4 }).tone, 'wait');   // signals alone are not a warning
+  assert.equal(badgeInfo({ ...base, first_close: 5000, final_price: 10000, warning: 'strong' }).tone, 'done');  // listed: the result, not a warning
+});
+
+import { dayStatus } from './calendar.js';
+
+const DS = (o = {}) => ({ no: 1, name: 'S', sub_start: '2026-11-18', sub_end: '2026-11-19', listing_date: '2026-11-30', first_close: null, ...o });
+
+test('dayStatus: listing today (not yet listed) comes first', () => {
+  assert.equal(dayStatus(DS({ listing_date: '2026-11-19', sub_end: '2026-11-19' }), '2026-11-19'), '오늘 상장');
+});
+
+test('dayStatus: listing tomorrow', () => {
+  assert.equal(dayStatus(DS({ sub_start: '2026-11-10', sub_end: '2026-11-11', listing_date: '2026-11-20' }), '2026-11-19'), '내일 상장');
+});
+
+test('dayStatus: the last subscription day', () => {
+  assert.equal(dayStatus(DS({ sub_start: '2026-11-18', sub_end: '2026-11-19' }), '2026-11-19'), '오늘 마감');
+});
+
+test('dayStatus: the first subscription day (a one-day subscription is the deadline day)', () => {
+  assert.equal(dayStatus(DS({ sub_start: '2026-11-19', sub_end: '2026-11-20' }), '2026-11-19'), '오늘 청약 시작');
+  assert.equal(dayStatus(DS({ sub_start: '2026-11-19', sub_end: '2026-11-19' }), '2026-11-19'), '오늘 마감');
+});
+
+test('dayStatus: nothing special, listed stocks, missing dates', () => {
+  assert.equal(dayStatus(DS({ sub_start: '2026-11-25', sub_end: '2026-11-26', listing_date: null }), '2026-11-19'), null);
+  assert.equal(dayStatus(DS({ sub_start: '2026-11-17', sub_end: '2026-11-20', listing_date: null }), '2026-11-19'), null);  // in the middle of a 4-day subscription
+  assert.equal(dayStatus(DS({ listing_date: '2026-11-19', first_close: 12000 }), '2026-11-19'), null);  // already listed
+  assert.equal(dayStatus({ no: 1, name: 'x' }, '2026-11-19'), null);
+});
+
+test('dayStatus: tomorrow is computed as a calendar day across month and year ends', () => {
+  assert.equal(dayStatus(DS({ listing_date: '2026-12-01' }), '2026-11-30'), '내일 상장');
+  assert.equal(dayStatus(DS({ listing_date: '2027-01-01' }), '2026-12-31'), '내일 상장');
+  assert.equal(dayStatus(DS({ listing_date: '2028-02-29' }), '2028-02-28'), '내일 상장');  // leap day
+  assert.equal(dayStatus(DS({ listing_date: '2026-03-01' }), '2026-02-28'), '내일 상장');  // no leap day
 });

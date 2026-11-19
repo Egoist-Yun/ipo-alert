@@ -43,7 +43,7 @@ export function badgeInfo(ipo) {
   if (ipo.is_spac) return { text: '스팩', tone: 'spac' };
   if (ipo.first_close != null && ipo.final_price) {  // already listed: what actually happened beats any signal
     const r = ipo.first_close / ipo.final_price - 1;
-    return { text: `${r >= 0 ? '+' : ''}${(r * 100).toFixed(0)}%`, tone: r < 0 ? 'risk' : '' };
+    return { text: `${r >= 0 ? '+' : ''}${(r * 100).toFixed(0)}%`, tone: 'done' };  // a result, not a warning: grey either way
   }
   if (ipo.inst_competition == null) return { text: '대기 중', tone: 'wait' };
   const flags = ipo.flag_count ?? 0;
@@ -53,7 +53,7 @@ export function badgeInfo(ipo) {
   const p = ipo.prediction || {};
   const warn = p.open_down ? p.open_down.warn : (p.prob && p.prob.warn);
   if (warn) return { text: '하락 경고', tone: 'risk' };
-  if (flags > 0) return { text: `⚠ ${flags}`, tone: 'risk' };
+  if (flags > 0) return { text: `신호 ${flags}개`, tone: 'wait' };  // signals without a warning: neutral (red/⚠ are for warnings only)
   if (unknown >= 2) return { text: `확인 불가 ${unknown}`, tone: 'wait' };
   return { text: unknown ? `신호 없음 · 확인 불가 ${unknown}` : '신호 없음', tone: '' };
 }
@@ -105,15 +105,10 @@ export function recordRows(ledger) {
 export function verdictInfo(ipo) {
   if (ipo.is_spac || ipo.first_close != null) return null;
   if (ipo.inst_competition == null) return { text: '기관 수요예측 결과가 아직 없어요.', tone: 'wait' };
-  const p = ipo.prediction || {};
   const warn = ipo.warning;
   if (warn) {
     const strong = warn === 'strong';
-    const w = p.open_down || p.prob || {};
-    const caught = strong ? w.strong_caught : w.caught;
-    const warned = strong ? w.strong_warned : w.warned;
-    const head = strong ? '강한 하락 경고' : '하락 경고';
-    return { text: caught != null && warned != null ? `${head} · 경고 ${warned}개 중 ${caught}개 적중` : head, tone: 'risk' };
+    return { text: strong ? '강한 하락 경고' : '하락 경고', tone: 'risk' };  // the hit counts live in the "과거 검증" row only
   }
   const unknown = ipo.unknown_count ?? 0;
   return { text: unknown ? `하락 경고 없음 · 확인 불가 ${unknown}개` : '하락 경고 없음', tone: '' };
@@ -214,4 +209,18 @@ export function markToast({ native, alarmOff, hasAlarm, hasListingDate }) {
   if (!native) return '알림은 안드로이드 앱에서만 받을 수 있어요';
   if (hasAlarm) return alarmOff ? '알림이 꺼져 있어요' : '상장일 08:30에 알림으로 알려드릴게요, 몇 분 늦을 수 있어요';
   return hasListingDate ? null : '상장일이 정해지면 08:30에 알림을 예약할게요';
+}
+
+// A "today / tomorrow" note for a stock, by KST date strings (YYYY-MM-DD). Priority: listing today, listing tomorrow,
+// last subscription day, first subscription day. Anything else (and already listed stocks): null.
+export function dayStatus(ipo, todayIso) {
+  if (ipo.first_close != null) return null;
+  const t = Date.parse(`${todayIso}T00:00:00Z`);
+  if (Number.isNaN(t)) return null;
+  const tomorrow = new Date(t + 86400000).toISOString().slice(0, 10);
+  if (ipo.listing_date === todayIso) return '오늘 상장';
+  if (ipo.listing_date === tomorrow) return '내일 상장';
+  if (ipo.sub_end === todayIso && ipo.sub_start && ipo.sub_start <= todayIso) return '오늘 마감';
+  if (ipo.sub_start === todayIso) return '오늘 청약 시작';
+  return null;
 }

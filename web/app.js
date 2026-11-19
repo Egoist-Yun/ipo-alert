@@ -1,4 +1,4 @@
-import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, warnText, recordRows, verdictInfo, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast } from './calendar.js';
+import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, warnText, recordRows, verdictInfo, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
@@ -113,10 +113,14 @@ function listRow(ipo, { big, applied } = {}) {
   const sub = `청약 ${md(ipo.sub_start)}~${md(ipo.sub_end)}`;
   const listed = ipo.first_close != null;
   // Applied rows: the stock name leads, the sell day (listing date) is the second line; the subscription period is left out.
-  const meta = big ? `${listingLabel(ipo)} · 시초가 매도` : (listed || !ipo.listing_date ? sub : `${sub} · ${listingLabel(ipo)}`);
+  // A today/tomorrow note (오늘 마감, 내일 상장 ...) comes first; for applied rows a listing note takes the place of the date.
+  const ds = dayStatus(ipo, kstToday());
+  const rest = big ? `${ds && ds.endsWith('상장') ? '' : `${listingLabel(ipo)} · `}시초가 매도`
+    : (listed || !ipo.listing_date ? sub : `${sub} · ${listingLabel(ipo)}`);
   const title = `${applied ? '✓ ' : ''}${ipo.name}`;
   return h('button', { class: 'row', type: 'button', onclick: () => select(ipo.no) },
-    h('span', {}, h('span', { class: `name${big ? ' big' : ''}` }, title), h('span', { class: 'meta' }, meta)),
+    h('span', {}, h('span', { class: `name${big ? ' big' : ''}` }, title),
+      h('span', { class: 'meta' }, ds && h('span', { class: 'today' }, ds), ds && ' · ', rest)),
     h('span', { class: `badge ${tone(ipo)}` }, badgeText(ipo)));
 }
 
@@ -196,10 +200,10 @@ function alarmNodes(ipo) {
 }
 
 function appliedNodes(ipo) {
-  if (!state.canApply) return [];
+  if (!state.canApply || ipo.first_close != null) return [];
   const on = state.applied.has(ipo.no);
   return [h('button', {
-    class: 'btn-small', type: 'button', 'aria-pressed': on ? 'true' : 'false',
+    class: 'btn-large', type: 'button', 'aria-pressed': on ? 'true' : 'false',
     onclick: async () => {
       state.applied = toggleApplied(state.applied, ipo.no);
       saveApplied(localStore(), state.applied);
@@ -255,11 +259,14 @@ function renderDetail() {
   const ipo = state.ipos.find(i => i.no === state.selected);
   if (!ipo) { box.replaceChildren(); return; }
 
-  const nodes = [h('div', { class: 'title-row' }, h('h3', {}, ipo.name), ...appliedNodes(ipo))];
+  const nodes = [h('h3', {}, ipo.name)];
+  const ds = dayStatus(ipo, kstToday());
+  if (ds) nodes.push(h('p', { class: 'today' }, ds));
   const chips = [ipo.market, ...(ipo.underwriters || [])].filter(Boolean);
   nodes.push(h('div', { class: 'chips' }, chips.map(c => h('span', { class: 'badge' }, c))));
   nodes.push(...alarmNodes(ipo));
   nodes.push(...verdictNodes(ipo));
+  nodes.push(...appliedNodes(ipo));
   nodes.push(kv('청약', `${md(ipo.sub_start)}~${md(ipo.sub_end)}`));
   nodes.push(...brokerNodes(ipo));
   if (ipo.listing_date) nodes.push(kv('상장', md(ipo.listing_date)));
@@ -287,9 +294,17 @@ function verdictNodes(ipo) {
     const p = ipo.prediction || {};
     const wt = warnText(p.open_down || p.prob || {}, ipo.warning === 'strong');
     if (wt) nodes.push(kv('과거 검증', wt));
+    if (p.conflict) nodes.push(conflictNode(ipo));
     nodes.push(h('p', { class: 'p' }, '경고는 손실을 피하기 위한 용도예요. 건너뛴다고 평균 수익이 오르는 건 아니에요.'));
+  } else if ((ipo.prediction || {}).conflict) {
+    nodes.push(conflictNode(ipo));
   }
   return nodes;
+}
+
+// Signals and the price prediction disagree: said once, up with the verdict (not hidden in the folded price section).
+function conflictNode(ipo) {
+  return h('p', { class: 'p' }, ipo.warning ? '가격 예측은 상승이지만, 하락을 미리 잡는 데는 과거에 경고가 가격 예측보다 정확했어요.' : '신호와 예측이 엇갈려요. 두 가지를 함께 보세요.');
 }
 
 function patternNodes(ipo) {
@@ -341,9 +356,6 @@ function referenceNodes(ipo) {
   const p = ipo.prediction;
   if (!p || (!p.open && !p.close && !p.knn)) return [];
   const inner = [];
-  if (p.conflict) {
-    inner.push(h('p', { class: 'p' }, ipo.warning ? '가격 예측은 상승이지만, 하락을 미리 잡는 데는 과거에 경고가 가격 예측보다 정확했어요.' : '신호와 예측이 엇갈려요. 두 가지를 함께 보세요.'));
-  }
   for (const [key, label] of [['open', '시초가 예상'], ['close', '첫날 종가 예상']]) {
     const e = p[key];
     if (!e) continue;
