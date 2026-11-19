@@ -188,6 +188,18 @@ def _brokers(soup) -> list[dict]:
     return []
 
 
+def _is_below_band_row(label: str, band_low: int | None) -> bool:
+    """The demand-table row for orders below the band bottom: '(하단) 미만', '미만(하단미만)', or a plain 'N원 미만' where N is the
+    band bottom. Range rows ('초과 ~ 미만', '이상 ~ 미만') and a plain row at any other price are not it."""
+    compact = re.sub(r"\s+", "", label)
+    if re.search(r"초과|이상|~", compact):
+        return False
+    if re.search(r"[(]하단[)]미만|[(]하단미만[)]", compact):
+        return True
+    m = re.fullmatch(r"([\d,]+)원?미만", compact)
+    return bool(m and band_low and int(m.group(1).replace(",", "")) == band_low)
+
+
 def parse_detail(html: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
     band = re.findall(r"\d[\d,]*", _label_value(soup, "희망공모가액") or "")
@@ -195,6 +207,7 @@ def parse_detail(html: str) -> dict:
     demand_start, demand_end = _full_range(_label_value(soup, "수요예측일"))
     retail_shares, retail_shares_high = _share_range(_label_value(soup, "일반청약자"))
     lock = _label_value(soup, "의무보유확약") or ""
+    band_low = int(band[0].replace(",", "")) if band else None
 
     below_band = None
     float_pct = None
@@ -205,9 +218,9 @@ def parse_detail(html: str) -> dict:
             cells = [_text(c) for c in tr.find_all(["td", "th"])]
             if not cells:
                 continue
-            if below_band is None and re.search(r"\(하단\)\s*미만", cells[0]):
+            if below_band is None and _is_below_band_row(cells[0], band_low):
                 below_band = _last_pct(cells)
-            if float_pct is None and cells[0] == "합계" and "유통가능" in _text(table):
+            if float_pct is None and re.fullmatch(r"(공모\s*후\s*)?합계", cells[0]) and "유통가능" in _text(table):
                 float_pct = _last_pct(cells)
 
     return {

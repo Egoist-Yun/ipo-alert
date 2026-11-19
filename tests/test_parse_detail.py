@@ -117,3 +117,43 @@ def test_detail_retail_shares_range_in_a_plain_cell():
     html = "<html><body><table><tr><td>일반청약자</td><td>500,000~600,000 주  (25.00%~30.00%)</td></tr></table></body></html>"
     d = parse_detail(html)
     assert (d["retail_shares"], d["retail_shares_high"]) == (500000, 600000)
+
+
+def _demand_page(*rows, band="19,000 ~ 23,000 원", float_row=None):
+    """A minimal page: the band, a demand table with the given label rows, optionally a float table whose last row is float_row."""
+    body = "".join(f"<tr><td>{label}</td><td>432</td><td>58,445,000</td><td>{pct}</td></tr>" for label, pct in rows)
+    page = f"<html><body><table><tr><td>희망공모가액</td><td>{band}</td></tr></table><table>{body}</table>"
+    if float_row:
+        page += f"<table><tr><td>구분</td><td>유통가능</td></tr><tr><td>{float_row}</td><td>5,064,910</td><td>100.00%</td><td>63.19%</td><td>36.81%</td><td>-</td></tr></table>"
+    return page + "</body></html>"
+
+
+def test_below_band_pct_from_a_plain_price_row_equal_to_the_band_bottom_ucast():
+    assert parse_detail(load("detail_2352"))["below_band_pct"] == 56.17
+    assert parse_detail(load("detail_2336"))["below_band_pct"] == 48.15        # the "(하단) 미만" form still works
+
+
+def test_below_band_pct_accepts_spacing_and_missing_won_sign_variants():
+    for label in ("19,000원 미만", "19,000 원 미만", "19,000 미만", "19,000원 미만(하단미만)", "19,000원(하단) 미만"):
+        assert parse_detail(_demand_page((label, "12.50%")))["below_band_pct"] == 12.5, label
+
+
+def test_below_band_pct_ignores_range_rows_and_prices_other_than_the_band_bottom():
+    for label in ("19,000원 초과 ~ 23,000원 미만", "19,000원 이상 23,000원 미만", "19,000원(하단) 초과 ~ 23,000원(상단) 미만",
+                  "18,000원 이상 ~ 19,000원 미만", "23,000원 미만"):                     # last: the band top, not the bottom
+        assert parse_detail(_demand_page((label, "12.50%")))["below_band_pct"] is None, label
+
+
+def test_below_band_pct_picks_the_bottom_row_among_several():
+    page = _demand_page(("19,000원 초과 ~ 23,000원 미만", "30.00%"), ("19,000원 미만", "56.17%"))
+    assert parse_detail(page)["below_band_pct"] == 56.17
+
+
+def test_below_band_pct_plain_row_needs_a_band_bottom():
+    assert parse_detail(_demand_page(("19,000원 미만", "56.17%"), band=""))["below_band_pct"] is None   # no band: only the old rule
+
+
+def test_float_pct_from_the_post_offering_total_row():
+    assert parse_detail(_demand_page(float_row="공모후 합계"))["float_pct"] == 36.81
+    assert parse_detail(_demand_page(float_row="합계"))["float_pct"] == 36.81
+    assert parse_detail(_demand_page(float_row="최대주주등 소계"))["float_pct"] is None
