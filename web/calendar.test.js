@@ -654,11 +654,11 @@ test('splitSegments: a value is cut at " · " only; a value without it stays one
 const sig = (key, label, value, flag, rule, severity) => ({ key, label, value, flag, rule, severity });
 const UCAST_SIGNALS = [
   sig('price_position', '공모가 위치', 19000, true, '하단 이하', 1.0),
-  sig('inst_competition', '기관 경쟁률', 173.4, true, '300대 1 미만', 1.73),
-  sig('lockup', '의무보유확약', 0.57, true, '5% 미만', 8.77),
-  sig('below_band', '하단 미만 신청', 56.17, true, '20% 이상', 2.81),
-  sig('float', '유통가능물량', 36.81, true, '35% 이상', 1.05),
-  sig('mood', '최근 시장 분위기', 0.6, true, '5/10 이상', 1.2),
+  sig('inst_competition', '기관 경쟁률', 173.4, true, '300대 1 미만', 0.42),
+  sig('lockup', '의무보유확약', 0.57, true, '5% 미만', 0.886),
+  sig('below_band', '하단 미만 신청', 56.17, true, '20% 이상', 1.81),
+  sig('float', '유통가능물량', 36.81, true, '35% 이상', 0.05),
+  sig('mood', '최근 시장 분위기', 0.6, true, '5/10 이상', 0.2),
 ];
 const UCAST = { ...UC, no: 2352, first_close: null, inst_competition: 173.4, signals: UCAST_SIGNALS, warning: 'strong', flag_count: 6, unknown_count: 0,
   prediction: { open_down: { warn: true, warned: 10, caught: 7, strong_warned: 10, strong_caught: 7, n_down: 18 } }, sub_start: '2026-11-18', sub_end: '2026-11-19', listing_date: '2026-11-30' };
@@ -698,7 +698,7 @@ test('signalRows: without severity the original order of the risk rows is kept',
 });
 
 test('evidenceLine: the two most severe risk signals as short phrases (rounded like the mockup)', () => {
-  assert.equal(evidenceLine(UCAST), '의무보유확약 0.6%, 기관 주문 56%⁠가 희망가 하단 아래');
+  assert.equal(evidenceLine(UCAST), '기관 주문 56%⁠가 희망가 하단 아래, 공모가가 희망 하단에 확정');
   const one = { signals: [sig('inst_competition', '기관 경쟁률', 173.4, true, '300대 1 미만', 1.73), sig('lockup', '확약', 9, false, '5% 미만', 0.5)] };
   assert.equal(evidenceLine(one), '기관 경쟁률 173대 1');
   assert.equal(evidenceLine({ signals: [sig('lockup', '확약', 9, false, '5% 미만', 0.5)] }), '');
@@ -717,14 +717,47 @@ test('trustText: the past hit record as a sentence', () => {
 });
 
 test('verdictHeader: warning box, no-warning line, waiting, spac and listed stocks', () => {
-  assert.deepEqual(verdictHeader(UCAST), { kind: 'warn', title: '강한 하락 경고', why: '의무보유확약 0.6%, 기관 주문 56%⁠가 희망가 하단 아래', trust: '과거 이 경고 10번 중 7번이 실제로 하락했어요', conflict: false });
+  assert.deepEqual(verdictHeader(UCAST), { kind: 'warn', title: '강한 하락 경고', why: '기관 주문 56%⁠가 희망가 하단 아래, 공모가가 희망 하단에 확정', trust: '과거 이 경고 10번 중 7번이 실제로 하락했어요', conflict: false, shift: null });
   const calm = verdictHeader({ ...UCAST, warning: null, signals: [sig('lockup', '확약', 9, false, '5% 미만', 0.5)], prediction: {} });
-  assert.deepEqual(calm, { kind: 'ok', title: '하락 경고 없음', why: '', trust: null, conflict: false });
+  assert.deepEqual(calm, { kind: 'ok', title: '하락 경고 없음', why: '', trust: null, conflict: false, shift: null });
   assert.equal(verdictHeader({ ...UCAST, warning: null, prediction: { conflict: true } }).conflict, true);
-  assert.equal(verdictHeader({ ...UCAST, warning: null }).why, '의무보유확약 0.6%, 기관 주문 56%⁠가 희망가 하단 아래');
-  assert.deepEqual(verdictHeader({ ...UCAST, inst_competition: null }), { kind: 'wait', title: '기관 수요예측 결과가 아직 없어요', why: '', trust: null, conflict: false });
+  assert.deepEqual(verdictHeader({ ...UCAST, inst_competition: null }), { kind: 'wait', title: '기관 수요예측 결과가 아직 없어요', why: '', trust: null, conflict: false, shift: null });
   assert.equal(verdictHeader({ ...UCAST, first_close: 21000 }), null);
   assert.equal(verdictHeader({ ...UCAST, is_spac: true }), null);
+});
+
+test('verdictHeader: no warning but risk signals say so in one line, never listing them as the reason', () => {
+  const v = verdictHeader({ ...UCAST, warning: null, prediction: {} });
+  assert.equal(v.kind, 'ok');
+  assert.equal(v.why, '위험 신호 6개, 모델 기준으로는 경고 아님');
+  assert.equal(verdictHeader({ ...UCAST, warning: null, signals: [UCAST_SIGNALS[0], { ...UCAST_SIGNALS[1], flag: false }], prediction: {} }).why, '위험 신호 1개, 모델 기준으로는 경고 아님');
+});
+
+// A stock whose pre-subscription judgment differs from the one after the subscription closed (the open-price model).
+const SHIFT = { ...UCAST, warning: null, warning_pre: 'strong', retail_competition: 172.0,
+  prediction: { open_down: { p_down: 0.213, threshold: 0.25, warn: false } } };
+
+test('verdictHeader: the judgment changed after the subscription (strong warning before, none now)', () => {
+  const v = verdictHeader(SHIFT);
+  assert.equal(v.kind, 'ok');
+  assert.deepEqual(v.shift, ['시초가 하락 확률 21%, 경고 기준 25%', '청약 전 판정은 강한 하락 경고였어요. 일반청약 경쟁률 172대 1이 반영돼 바뀌었어요']);
+  assert.equal(v.why, '');   // the transition lines replace the risk-signal line
+});
+
+test('verdictHeader: the judgment changed the other way (none before, warning now)', () => {
+  const v = verdictHeader({ ...SHIFT, warning: 'warn', warning_pre: null, prediction: { open_down: { p_down: 0.31, threshold: 0.25, warn: true, warned: 16, caught: 10 } } });
+  assert.equal(v.kind, 'warn');
+  assert.deepEqual(v.shift, ['시초가 하락 확률 31%, 경고 기준 25%', '청약 전 판정은 경고 없음이었어요. 일반청약 경쟁률 172대 1이 반영돼 바뀌었어요']);
+  assert.equal(verdictHeader({ ...SHIFT, warning: 'warn', warning_pre: 'strong', prediction: SHIFT.prediction }).shift.length, 2);   // strong before, plain warning now: also a change
+});
+
+test('verdictHeader: no transition lines when both judgments agree, without an open-price model, or in old data', () => {
+  assert.equal(verdictHeader({ ...SHIFT, warning_pre: null }).shift, null);                          // none before, none now
+  assert.equal(verdictHeader({ ...UCAST, warning_pre: 'strong' }).shift, null);                      // warning and pre agree
+  assert.equal(verdictHeader({ ...SHIFT, prediction: { prob: { p_down: 0.36 } } }).shift, null);     // before the subscription closed: no open_down
+  const old = { ...SHIFT }; delete old.warning_pre;
+  assert.equal(verdictHeader(old).shift, null);                                                       // data from before the field existed
+  assert.equal(verdictHeader({ ...SHIFT, retail_competition: null }).shift[1], '청약 전 판정은 강한 하락 경고였어요. 일반청약 경쟁률이 반영돼 바뀌었어요');
 });
 
 test('factGrid: four cells with real values, sub text and unknowns', () => {
@@ -752,6 +785,6 @@ test('resultGrid: price, open and first close with changes, and the listing day'
   assert.deepEqual(g.map(x => [x.k, x.v, x.s]), [
     ['공모가', '10,000원', ''], ['시초가', '12,000원', '+20%'], ['첫날 종가', '9,000원', '-10%'], ['상장일', '11/30', ''],
   ]);
-  assert.equal(g[2].down, true); assert.equal(g[1].down, false);
+  assert.deepEqual(g.map(x => Object.keys(x).sort().join()), Array(4).fill('k,s,v'));   // plain: no colour flag for a fall
   assert.equal(resultGrid({ final_price: 10000, open_price: null, first_close: 9000 }).length, 2);   // no open price, no listing day: just two cells
 });

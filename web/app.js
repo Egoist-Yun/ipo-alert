@@ -289,7 +289,8 @@ function verdictNodes(ipo) {
   const v = verdictHeader(ipo);
   if (!v) return [];
   const box = h('div', { class: `verdict ${v.kind}` }, h('h2', {}, v.title),
-    v.why && h('p', { class: 'why' }, v.why), v.trust && h('p', { class: 'trust' }, v.trust));
+    v.why && h('p', { class: 'why' }, v.why), v.trust && h('p', { class: 'trust' }, v.trust),
+    v.shift && v.shift.map((t, i) => h('p', { class: i ? 'shift-note' : 'shift' }, t)));
   // no warning, but the signals and the price prediction disagree
   return [box, v.conflict && h('p', { class: 'p' }, '신호와 예측이 엇갈려요. 두 가지를 함께 보세요.')].filter(Boolean);
 }
@@ -304,8 +305,8 @@ function breakAtTilde(text) {
 function factNodes(cells, kind) {
   return [h('section', { class: `facts ${kind}` }, cells.map(c => h('div', { class: 'fact' },
     h('p', { class: 'k' }, c.k),
-    h('p', { class: `v${c.unknown ? ' unknown' : ''}${c.down ? ' down' : ''}` }, breakAtTilde(c.v)),
-    c.s && h('p', { class: `s${c.today ? ' today' : ''}${c.down ? ' down' : ''}` }, c.s))))];
+    h('p', { class: `v${c.unknown ? ' unknown' : ''}` }, breakAtTilde(c.v)),
+    c.s && h('p', { class: `s${c.today ? ' today' : ''}` }, c.s))))];
 }
 
 // The risk signals as a 3-column table: signal | this stock | the rule that makes it a risk.

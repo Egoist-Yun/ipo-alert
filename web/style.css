@@ -126,6 +126,8 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .verdict.warn { padding: var(--space-lg); border-radius: 14px; background: var(--danger-weak); }
 .verdict.warn h2 { color: var(--danger); font-size: 1.5rem; line-height: 1.35; }
 .verdict.wait h2 { color: var(--muted); font-size: 1rem; font-weight: 600; }
+.verdict .shift { margin-top: var(--space-sm); color: var(--foreground); font-size: 0.9375rem; font-weight: 600; }
+.verdict .shift-note { margin-top: var(--space-xs); color: var(--body); font-size: 0.8125rem; text-wrap: pretty; }
 .verdict + .p { margin-top: var(--space-md); }
 /* broker app buttons: two equal columns, name over "앱 열기" */
 .brokers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); margin-top: var(--space-md); }
@@ -139,7 +141,6 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .fact .k { color: var(--muted); font-size: 0.8125rem; }
 .fact .v { color: var(--foreground); font-size: 1.1875rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.4; }
 .fact .v.unknown { color: var(--muted); font-weight: 400; }
-.fact .v.down, .fact .s.down { color: var(--danger); }
 .fact .s { color: var(--body); font-size: 0.8125rem; }
 .fact .s.today { color: var(--weak-fg); font-weight: 600; }
 /* signal table: signal | this stock | the rule that makes it a risk */

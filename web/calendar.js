@@ -369,17 +369,35 @@ export function trustText(w, strong) {
   return p != null ? `과거 이 경고의 ${Math.round(p * 100)}%가 실제로 하락했어요` : null;
 }
 
+const LEVEL_TEXT = { strong: '강한 하락 경고', warn: '하락 경고' };
+const levelWas = level => (level ? `${LEVEL_TEXT[level]}였어요` : '경고 없음이었어요');
+
+// After the subscription closes the judgment follows the open-price model and can differ from the pre-subscription one:
+// two lines say so (shown only when both are known and differ; data from before warning_pre existed shows nothing).
+function judgmentShift(ipo) {
+  const od = (ipo.prediction || {}).open_down;
+  if (!od || ipo.warning_pre === undefined) return null;
+  if ((ipo.warning || null) === (ipo.warning_pre || null)) return null;
+  const retail = ipo.retail_competition != null ? `일반청약 경쟁률 ${Math.round(ipo.retail_competition)}대 1이` : '일반청약 경쟁률이';
+  return [`시초가 하락 확률 ${Math.round(od.p_down * 100)}%, 경고 기준 ${Math.round(od.threshold * 100)}%`,
+    `청약 전 판정은 ${levelWas(ipo.warning_pre)}. ${retail} 반영돼 바뀌었어요`];
+}
+
 // The verdict header: kind 'warn' (red box), 'ok' (plain line), 'wait' (no demand forecast yet); null for listed stocks and spacs.
 export function verdictHeader(ipo) {
   if (ipo.is_spac || ipo.first_close != null) return null;
   const conflict = !ipo.warning && !!(ipo.prediction || {}).conflict;
-  if (ipo.inst_competition == null) return { kind: 'wait', title: '기관 수요예측 결과가 아직 없어요', why: '', trust: null, conflict: false };
+  if (ipo.inst_competition == null) return { kind: 'wait', title: '기관 수요예측 결과가 아직 없어요', why: '', trust: null, conflict: false, shift: null };
+  const shift = judgmentShift(ipo);
   if (ipo.warning) {
     const p = ipo.prediction || {};
     return { kind: 'warn', title: ipo.warning === 'strong' ? '강한 하락 경고' : '하락 경고', why: evidenceLine(ipo),
-      trust: trustText(p.open_down || p.prob || {}, ipo.warning === 'strong'), conflict: false };
+      trust: trustText(p.open_down || p.prob || {}, ipo.warning === 'strong'), conflict: false, shift };
   }
-  return { kind: 'ok', title: '하락 경고 없음', why: evidenceLine(ipo), trust: null, conflict };
+  // no warning: the risk signals are not the reason for anything here, only counted
+  const risks = signalRows(ipo).filter(r => r.tone === 'risk').length;
+  const why = shift || !risks ? '' : `위험 신호 ${risks}개, 모델 기준으로는 경고 아님`;
+  return { kind: 'ok', title: '하락 경고 없음', why, trust: null, conflict, shift };
 }
 
 // The four numbers needed to subscribe (stocks not yet listed). today: true marks the sub text for the "today" colour.
@@ -414,9 +432,9 @@ export function factGrid(ipo, todayIso) {
 export function resultGrid(ipo) {
   const base = ipo.final_price;
   const change = p => `${p >= base ? '+' : ''}${((p / base - 1) * 100).toFixed(0)}%`;
-  const cells = [{ k: '공모가', v: `${fmtN(base)}원`, s: '', down: false }];
-  if (ipo.open_price != null) cells.push({ k: '시초가', v: `${fmtN(ipo.open_price)}원`, s: change(ipo.open_price), down: ipo.open_price < base });
-  cells.push({ k: '첫날 종가', v: `${fmtN(ipo.first_close)}원`, s: change(ipo.first_close), down: ipo.first_close < base });
-  if (ipo.listing_date) cells.push({ k: '상장일', v: monthDay(ipo.listing_date), s: '', down: false });
+  const cells = [{ k: '공모가', v: `${fmtN(base)}원`, s: '' }];
+  if (ipo.open_price != null) cells.push({ k: '시초가', v: `${fmtN(ipo.open_price)}원`, s: change(ipo.open_price) });
+  cells.push({ k: '첫날 종가', v: `${fmtN(ipo.first_close)}원`, s: change(ipo.first_close) });
+  if (ipo.listing_date) cells.push({ k: '상장일', v: monthDay(ipo.listing_date), s: '' });
   return cells;
 }
