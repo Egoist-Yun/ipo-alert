@@ -435,6 +435,11 @@ Preserve state clarity and reduced-motion compatibility. Label any exact animati
 
 Three deviations from the sourced TDS values, recorded here so they are not mistaken for verified TDS. **Contrast:** for web accessibility (WCAG AA, 4.5:1 for text) the web app uses grey600 `#6b7684` for muted text instead of grey500 `#8b95a1`, and red700 `#d22030` for danger text instead of red600 `#e42939`; both are neighbouring steps of the same Toss palette, not new colours. **Toast:** a short message that fades in at the bottom and removes itself after about three seconds is used for confirmations; TDS lists a Toast component but publishes no specification, and the "Don't invent toasts" rule below would otherwise forbid it, so it is marked as an extension (tokens only, no shadow). **Press feedback:** the pressed state also dims to opacity 0.8 (the TDS button spec says the fill is unchanged); the 0.8 comes from measuring a Toss app screen recording at 30fps and is approximate, not an official value.
 
+Detail-screen layout extensions (conclusion, then action, then numbers, then evidence; tokens only, no shadows):
+- **Verdict box:** for a warning only, a `--danger-weak` background block (radius 14px, 16px padding) with a 24px bold `--danger` verdict; without a warning the verdict is a plain line with no box.
+- **Number grid:** two equal columns of name (13px `--muted`), value (19px 700, tabular numbers) and note (13px), separated from the rest by a top rule only, no cards.
+- **Signal table:** three columns (signal, this stock, risk rule); a risk value is `--danger` 700, an unknown value `--muted`, the rule column `--muted` and never wrapped.
+
 ## Components
 
 ### TDS Mobile Button

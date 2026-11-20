@@ -264,27 +264,6 @@ export function splitSegments(text) {
   return String(text == null ? '' : text).split(' · ');
 }
 
-export function subscriptionFacts(ipo) {
-  const band = ipo.band_low && ipo.band_high
-    ? (ipo.band_low === ipo.band_high ? `${fmtN(ipo.band_low)}원` : `${fmtN(ipo.band_low)}~${fmtN(ipo.band_high)}원`) : null;  // equal ends (a spac): one price
-  let price;
-  if (ipo.final_price) price = { k: '공모가', v: band ? `${fmtN(ipo.final_price)}원 (희망 ${band})` : `${fmtN(ipo.final_price)}원`, unknown: false };
-  else if (band) price = { k: '공모가', v: `희망 ${band} · 확정 전`, unknown: false };
-  else price = { k: '공모가', v: UNKNOWN, unknown: true };
-
-  const unit = ipo.final_price || ipo.band_high;
-  const key = '최소 증거금 · 10주 가정';
-  let minimum = { k: key, v: UNKNOWN, unknown: true };
-  if (unit && ipo.retail_deposit_pct != null) {
-    const amount = Math.round(10 * unit * ipo.retail_deposit_pct / 100);
-    const stake = Math.round(10 * unit);
-    minimum = { k: key, v: `${fmtN(amount)}원 (10주 ${fmtN(stake)}원의 ${ipo.retail_deposit_pct}%)${ipo.final_price ? '' : ' · 희망 상단 기준'}`, unknown: false };
-  }
-
-  const refund = ipo.refund_date ? { k: '환불일', v: monthDay(ipo.refund_date), unknown: false } : { k: '환불일', v: UNKNOWN, unknown: true };
-  return [price, minimum, refund];
-}
-
 // The folded "공모 정보" rows: only what is known (a missing value leaves its row out). Amounts in 억 원, no colour for a loss.
 export function offerInfoRows(ipo) {
   const rows = [];
@@ -334,4 +313,110 @@ export function layoutWeek(barSegs, markSegs) {
     items.push({ seg, lane: li, c0: seg.c0, c1: seg.c0 });
   }
   return { items, lanes: lanes.length };
+}
+
+// ---- Detail screen: verdict header, signal table, fact grid ----
+
+const moodDenominator = rule => { const m = /\/(\d+)/.exec(rule || ''); return m ? Number(m[1]) : null; };
+const oneDecimal = v => Number(Number(v).toFixed(1));
+
+function signalText(s) {
+  const v = s.value;
+  if (v == null) return UNKNOWN;
+  if (s.key === 'price_position') return s.flag === true ? '하단 확정' : `${fmtN(v)}원`;
+  if (s.key === 'inst_competition') return `${Math.round(v)}대 1`;
+  if (s.key === 'mood') {
+    const n = moodDenominator(s.rule);
+    return n ? `${Math.round(v * n)}/${n} 하락` : `${Math.round(v * 100)}%`;
+  }
+  return `${v}%`;
+}
+
+// The signal table rows: risk first (largest severity first), then unknown, then normal. The rule column comes from the data
+// (ipo/signals.py is its only source); data written before the rule existed says 확인 불가 there.
+export function signalRows(ipo) {
+  const rows = (ipo.signals || []).map((s, i) => ({
+    key: s.key, label: s.label, text: signalText(s), rule: s.rule || UNKNOWN, severity: s.severity ?? null, i,
+    tone: s.flag === true ? 'risk' : s.flag == null ? 'unknown' : 'ok',
+  }));
+  const order = { risk: 0, unknown: 1, ok: 2 };
+  rows.sort((a, b) => order[a.tone] - order[b.tone] || (a.tone === 'risk' ? (b.severity ?? -1) - (a.severity ?? -1) : 0) || a.i - b.i);
+  return rows.map(({ i, ...r }) => r);
+}
+
+const EVIDENCE = {
+  below_band: s => `기관 주문 ${Math.round(s.value)}%⁠가 희망가 하단 아래`,  // ⁠ (word joiner): the line may not break between the % and the particle
+  lockup: s => `의무보유확약 ${oneDecimal(s.value)}%`,
+  inst_competition: s => `기관 경쟁률 ${Math.round(s.value)}대 1`,
+  price_position: () => '공모가가 희망 하단에 확정',
+  float: s => `유통가능물량 ${Math.round(s.value)}%`,
+  mood: s => { const n = moodDenominator(s.rule); return n ? `최근 공모주 ${n}개 중 ${Math.round(s.value * n)}개 하락` : '최근 공모주 시장 분위기가 나빠요'; },
+};
+
+// One line saying why: the two most severe risk signals.
+export function evidenceLine(ipo) {
+  const flagged = new Map((ipo.signals || []).map(s => [s.key, s]));
+  return signalRows(ipo).filter(r => r.tone === 'risk').slice(0, 2)
+    .map(r => EVIDENCE[r.key] ? EVIDENCE[r.key](flagged.get(r.key)) : r.label).join(', ');
+}
+
+// How often this kind of warning was right in the past, as a sentence.
+export function trustText(w, strong) {
+  const caught = strong ? w.strong_caught : w.caught;
+  const warned = strong ? w.strong_warned : w.warned;
+  if (caught != null && warned != null) return `과거 이 경고 ${warned}번 중 ${caught}번이 실제로 하락했어요`;
+  const p = strong ? w.strong_precision : w.precision;
+  return p != null ? `과거 이 경고의 ${Math.round(p * 100)}%가 실제로 하락했어요` : null;
+}
+
+// The verdict header: kind 'warn' (red box), 'ok' (plain line), 'wait' (no demand forecast yet); null for listed stocks and spacs.
+export function verdictHeader(ipo) {
+  if (ipo.is_spac || ipo.first_close != null) return null;
+  const conflict = !ipo.warning && !!(ipo.prediction || {}).conflict;
+  if (ipo.inst_competition == null) return { kind: 'wait', title: '기관 수요예측 결과가 아직 없어요', why: '', trust: null, conflict: false };
+  if (ipo.warning) {
+    const p = ipo.prediction || {};
+    return { kind: 'warn', title: ipo.warning === 'strong' ? '강한 하락 경고' : '하락 경고', why: evidenceLine(ipo),
+      trust: trustText(p.open_down || p.prob || {}, ipo.warning === 'strong'), conflict: false };
+  }
+  return { kind: 'ok', title: '하락 경고 없음', why: evidenceLine(ipo), trust: null, conflict };
+}
+
+// The four numbers needed to subscribe (stocks not yet listed). today: true marks the sub text for the "today" colour.
+export function factGrid(ipo, todayIso) {
+  const band = ipo.band_low && ipo.band_high
+    ? (ipo.band_low === ipo.band_high ? `${fmtN(ipo.band_low)}원` : `${fmtN(ipo.band_low)}~${fmtN(ipo.band_high)}원`) : null;
+  const price = ipo.final_price
+    ? { k: '공모가', v: `${fmtN(ipo.final_price)}원`, s: band ? `희망 ${band}` : '', unknown: false, today: false }
+    : band ? { k: '공모가', v: band, s: '확정 전', unknown: false, today: false }
+      : { k: '공모가', v: UNKNOWN, s: '', unknown: true, today: false };
+
+  const unit = ipo.final_price || ipo.band_high;
+  const deposit = unit && ipo.retail_deposit_pct != null
+    ? { k: '최소 증거금', v: `${fmtN(Math.round(10 * unit * ipo.retail_deposit_pct / 100))}원`,
+        s: `10주 기준, 증거금 ${ipo.retail_deposit_pct}%${ipo.final_price ? '' : ', 희망 상단 기준'}`, unknown: false, today: false }
+    : { k: '최소 증거금', v: UNKNOWN, s: '', unknown: true, today: false };
+
+  const ds = dayStatus(ipo, todayIso);
+  let sub = '예정';
+  if (ds) sub = ds;
+  else if (ipo.sub_end && ipo.sub_end < todayIso) sub = '마감됨';
+  else if (ipo.sub_start && ipo.sub_start <= todayIso) sub = '청약 중';
+  const period = ipo.sub_start && ipo.sub_end ? `${monthDay(ipo.sub_start)}~${monthDay(ipo.sub_end)}` : null;
+  const subscription = { k: '청약', v: period || UNKNOWN, s: period ? sub : '', unknown: !period, today: !!ds };
+
+  const listing = { k: '상장 · 환불', v: ipo.listing_date ? monthDay(ipo.listing_date) : '미정',
+    s: ipo.refund_date ? `환불 ${monthDay(ipo.refund_date)}` : '환불일 확인 불가', unknown: false, today: false };
+  return [price, deposit, subscription, listing];
+}
+
+// A listed stock: the result instead of the verdict (price, open, first close with their changes, listing day).
+export function resultGrid(ipo) {
+  const base = ipo.final_price;
+  const change = p => `${p >= base ? '+' : ''}${((p / base - 1) * 100).toFixed(0)}%`;
+  const cells = [{ k: '공모가', v: `${fmtN(base)}원`, s: '', down: false }];
+  if (ipo.open_price != null) cells.push({ k: '시초가', v: `${fmtN(ipo.open_price)}원`, s: change(ipo.open_price), down: ipo.open_price < base });
+  cells.push({ k: '첫날 종가', v: `${fmtN(ipo.first_close)}원`, s: change(ipo.first_close), down: ipo.first_close < base });
+  if (ipo.listing_date) cells.push({ k: '상장일', v: monthDay(ipo.listing_date), s: '', down: false });
+  return cells;
 }

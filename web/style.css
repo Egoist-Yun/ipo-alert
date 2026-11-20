@@ -115,13 +115,45 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 [hidden] { display: none !important; }
 .record:empty { display: none; }
 .panel { padding: var(--space-xl) 0 0; border-top: 1px solid var(--border); }
-.panel h3 { color: var(--foreground); font-size: 1.375rem; font-weight: 600; line-height: 1.5; }
-.chips { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin: var(--space-md) 0 var(--space-lg); }
+.panel .name { color: var(--foreground); font-size: 1.25rem; font-weight: 700; line-height: 1.5; text-wrap: balance; }
+.chips { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin: var(--space-md) 0 0; }
 .chips .badge { background: var(--surface); color: var(--body); }
-.summary { text-wrap: pretty; margin: var(--space-lg) 0 var(--space-md); color: var(--foreground); font-size: 1.0625rem; font-weight: 600; line-height: 1.5; }
-.broker-buttons { display: flex; flex-wrap: wrap; gap: var(--space-md); margin: var(--space-md) 0 var(--space-lg); }
-.broker-buttons .btn-medium { margin-top: 0; }
-.summary.warn { color: var(--danger); }
+/* verdict header: a red box only for a warning; otherwise a plain line */
+.verdict { margin-top: var(--space-lg); }
+.verdict h2 { color: var(--foreground); font-size: 1.25rem; font-weight: 700; line-height: 1.4; }
+.verdict .why { margin-top: var(--space-sm); color: var(--foreground); font-size: 0.9375rem; font-weight: 600; text-wrap: pretty; }
+.verdict .trust { margin-top: var(--space-xs); color: var(--body); font-size: 0.8125rem; }
+.verdict.warn { padding: var(--space-lg); border-radius: 14px; background: var(--danger-weak); }
+.verdict.warn h2 { color: var(--danger); font-size: 1.5rem; line-height: 1.35; }
+.verdict.wait h2 { color: var(--muted); font-size: 1rem; font-weight: 600; }
+.verdict + .p { margin-top: var(--space-md); }
+/* broker app buttons: two equal columns, name over "앱 열기" */
+.brokers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); margin-top: var(--space-md); }
+.brokers .broker { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 44px; padding: 0 var(--space-sm); border-radius: 10px; background: var(--surface); color: var(--foreground); line-height: 1.25; text-decoration: none; transition: transform 130ms ease-out, opacity 130ms ease-out; }
+.brokers .broker:active { transform: scale(0.96); opacity: 0.8; transition-duration: 50ms; transition-delay: 100ms, 0ms; }
+.brokers .broker:only-child { grid-column: 1 / -1; }
+.brokers .nm { font-size: 0.9375rem; font-weight: 600; }
+.brokers .sub { color: var(--muted); font-size: 0.75rem; }
+/* number grid: two equal columns, no cards, a rule on top */
+.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-lg); margin-top: var(--space-lg); padding: var(--space-lg) 0; border-top: 1px solid var(--border); }
+.fact .k { color: var(--muted); font-size: 0.8125rem; }
+.fact .v { color: var(--foreground); font-size: 1.1875rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.4; }
+.fact .v.unknown { color: var(--muted); font-weight: 400; }
+.fact .v.down, .fact .s.down { color: var(--danger); }
+.fact .s { color: var(--body); font-size: 0.8125rem; }
+.fact .s.today { color: var(--weak-fg); font-weight: 600; }
+/* signal table: signal | this stock | the rule that makes it a risk */
+.sec { margin-top: var(--space-md); padding-top: var(--space-lg); border-top: 1px solid var(--border); }
+.sec h3 { color: var(--foreground); font-size: 1rem; font-weight: 600; }
+.sec h3 span { color: var(--danger); }
+.sig { width: 100%; margin-top: var(--space-sm); border-collapse: collapse; font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+.sig th { padding: var(--space-sm) 0; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 0.75rem; font-weight: 400; text-align: right; }
+.sig td { padding: var(--space-md) 0; border-bottom: 1px solid var(--border); color: var(--body); text-align: right; vertical-align: top; }
+.sig th:first-child, .sig td:first-child { text-align: left; }
+.sig td:first-child { padding-right: var(--space-md); color: var(--foreground); }
+.sig td.hit { color: var(--danger); font-weight: 700; }
+.sig td.unk { color: var(--muted); }
+.sig td.rule { padding-left: 12px; color: var(--muted); white-space: nowrap; }
 .panel h4 { margin: var(--space-xl) 0 var(--space-sm); color: var(--foreground); font-size: 1rem; font-weight: 600; }
 .kv { display: flex; flex-wrap: wrap; justify-content: space-between; column-gap: var(--space-lg); row-gap: 2px; padding: var(--space-md) 0; border-top: 1px solid var(--border); font-size: 0.9375rem; }
 .kv .k { flex: 1 1 auto; color: var(--body); text-wrap: balance; }
@@ -130,7 +162,7 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .kv .v.flag { color: var(--danger); }
 .kv .v.unknown { color: var(--muted); font-weight: 400; }
 .p { text-wrap: pretty; color: var(--foreground); font-size: 0.9375rem; line-height: 1.5; }
-.btn-large { display: flex; align-items: center; justify-content: center; width: 100%; height: 48px; margin: var(--space-lg) 0 0; border-radius: 14px; background: var(--weak-bg); color: var(--weak-fg); font-size: 1rem; font-weight: 600; }
+.btn-large { display: flex; align-items: center; justify-content: center; width: 100%; height: 48px; margin: var(--space-md) 0 0; border-radius: 14px; background: var(--weak-bg); color: var(--weak-fg); font-size: 1rem; font-weight: 600; }
 .today { color: var(--weak-fg); font-weight: 600; }
 .btn-medium { display: inline-flex; align-items: center; justify-content: center; height: 38px; margin-top: var(--space-xl); padding: 0 var(--space-lg); border-radius: 10px; background: var(--weak-bg); color: var(--weak-fg); font-size: 0.9375rem; font-weight: 600; text-decoration: none; }
 

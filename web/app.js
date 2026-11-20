@@ -1,4 +1,4 @@
-import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, warnText, recordRows, verdictInfo, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks, barTone, subscriptionFacts, offerInfoRows, layoutWeek, splitSegments } from './calendar.js';
+import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, recordRows, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks, barTone, offerInfoRows, layoutWeek, splitSegments, signalRows, verdictHeader, factGrid, resultGrid } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
@@ -27,15 +27,6 @@ const pct = (r, digits = 0) => `${r >= 0 ? '+' : ''}${(r * 100).toFixed(digits)}
 function kstToday() {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date());
   return parts; // YYYY-MM-DD
-}
-
-function valueText(sig) {
-  const v = sig.value;
-  if (v == null) return '확인 불가';
-  if (sig.key === 'price_position') return won(v);
-  if (sig.key === 'inst_competition') return `${Number(v).toFixed(0)}대 1`;
-  if (sig.key === 'mood') return `${(v * 100).toFixed(0)}%`;
-  return `${v}%`;
 }
 
 const tone = ipo => badgeInfo(ipo).tone;
@@ -234,8 +225,7 @@ function brokerNodes(ipo) {
   }
   const links = brokerLinks(ipo.underwriters);
   if (!links.length) return [];
-  return [h('div', { class: 'broker-buttons' },
-    links.map(l => brokerButton(l)))];
+  return [h('div', { class: 'brokers' }, links.map(l => brokerButton(l)))];
 }
 
 async function launchBroker(action) {
@@ -247,13 +237,14 @@ async function launchBroker(action) {
   window.location.href = action.fallback;
 }
 
+const brokerLabel = link => [h('span', { class: 'nm' }, link.name), h('span', { class: 'sub' }, '앱 열기')];
+
 function brokerButton(link) {
   const action = brokerAction(link, isNativeApp(window));
   if (action.type === 'launch') {
-    return h('a', { class: 'btn-medium', href: action.fallback, onclick: ev => { ev.preventDefault(); launchBroker(action); } },
-      `${link.name} 앱 열기`);
+    return h('a', { class: 'broker', href: action.fallback, onclick: ev => { ev.preventDefault(); launchBroker(action); } }, brokerLabel(link));
   }
-  return h('a', { class: 'btn-medium', href: action.href }, `${link.name} 앱 열기`);
+  return h('a', { class: 'broker', href: action.href }, brokerLabel(link));
 }
 
 // A text whose "·" pieces each stay on one line: the line may break only at a dot. Without a dot it is plain text.
@@ -272,76 +263,80 @@ function renderDetail() {
   const ipo = state.ipos.find(i => i.no === state.selected);
   if (!ipo) { box.replaceChildren(); return; }
 
-  const nodes = [h('h3', {}, ipo.name)];
-  const ds = dayStatus(ipo, kstToday());
-  if (ds) nodes.push(h('p', { class: 'today' }, ds));
+  const listed = ipo.first_close != null;
   const chips = [ipo.market, ...(ipo.underwriters || [])].filter(Boolean);
-  nodes.push(h('div', { class: 'chips' }, chips.map(c => h('span', { class: 'badge' }, c))));
-  nodes.push(...alarmNodes(ipo));
-  nodes.push(...verdictNodes(ipo));
-  nodes.push(...appliedNodes(ipo));
-  nodes.push(...brokerNodes(ipo));  // the broker app buttons sit right under the apply button
-  // The three facts needed to subscribe, right under the verdict and the apply button (once listed, the result block has the price).
-  if (ipo.first_close == null) nodes.push(...subscriptionFacts(ipo).map(f => kv(f.k, f.v, f.unknown ? 'unknown' : '')));
-  nodes.push(kv('청약', `${md(ipo.sub_start)}~${md(ipo.sub_end)}`));
-  if (ipo.listing_date) nodes.push(kv('상장', md(ipo.listing_date)));
+  const nodes = [h('h1', { class: 'name' }, ipo.name),
+    h('div', { class: 'chips' }, chips.map(c => h('span', { class: 'badge' }, c)))];
+  // conclusion -> action -> numbers -> evidence
+  nodes.push(...(listed ? factNodes(resultGrid(ipo), 'result') : verdictNodes(ipo)));
+  nodes.push(...appliedNodes(ipo), ...alarmNodes(ipo), ...brokerNodes(ipo));
+  if (!listed) nodes.push(...factNodes(factGrid(ipo, kstToday()), 'subscribe'));
   // The rest of the offering information is folded (closed by default); rows without a value are not shown.
   const offerRows = offerInfoRows(ipo);
   if (offerRows.length) nodes.push(h('details', { class: 'drop' }, h('summary', {}, h('span', {}, '공모 정보')), offerRows.map(r => kv(r.k, r.v))));
 
   if (!ipo.is_spac && ipo.inst_competition != null) {
-    const unknown = ipo.unknown_count ? ` · 확인 불가 ${ipo.unknown_count}개` : '';
-    nodes.push(h('h4', {}, (ipo.flag_count ? `위험 신호 ${ipo.flag_count}개` : '위험 신호 없음') + unknown));
-    for (const s of ipo.signals) {
-      nodes.push(kv(s.label, (s.flag ? '⚠ ' : '') + valueText(s), s.flag === true ? 'flag' : s.flag === null ? 'unknown' : ''));
-    }
+    nodes.push(...signalNodes(ipo));
     nodes.push(...patternNodes(ipo));
-    if (ipo.first_close == null) nodes.push(...probabilityNodes(ipo), ...referenceNodes(ipo));
+    if (!listed) nodes.push(...modelNodes(ipo));
   }
   if (ipo.url) nodes.push(h('a', { class: 'btn-medium', href: ipo.url, target: '_blank', rel: 'noopener' }, '원문 보기'));
   box.replaceChildren(h('div', { class: 'panel' }, nodes));
 }
 
-// The conclusion comes first: the warning (or the actual result once listed). Prices are only a side reference.
+// The conclusion comes first: a red box for a warning, a plain line otherwise.
 function verdictNodes(ipo) {
-  if (ipo.first_close != null) return resultNodes(ipo);
-  const v = verdictInfo(ipo);
+  const v = verdictHeader(ipo);
   if (!v) return [];
-  const nodes = [h('p', { class: `summary${v.tone === 'risk' ? ' warn' : ''}` }, v.text)];
-  if (ipo.warning) {
-    const p = ipo.prediction || {};
-    const wt = warnText(p.open_down || p.prob || {}, ipo.warning === 'strong');
-    if (wt) nodes.push(kv('과거 검증', wt));
-  } else if ((ipo.prediction || {}).conflict) {
-    // no warning, but the signals and the price prediction disagree
-    nodes.push(h('p', { class: 'p' }, '신호와 예측이 엇갈려요. 두 가지를 함께 보세요.'));
-  }
-  return nodes;
+  const box = h('div', { class: `verdict ${v.kind}` }, h('h2', {}, v.title),
+    v.why && h('p', { class: 'why' }, v.why), v.trust && h('p', { class: 'trust' }, v.trust));
+  // no warning, but the signals and the price prediction disagree
+  return [box, v.conflict && h('p', { class: 'p' }, '신호와 예측이 엇갈려요. 두 가지를 함께 보세요.')].filter(Boolean);
+}
+
+// A range like 18,000~25,000원 has no spaces: let it break after the "~" (never inside a number) when the cell is too narrow.
+function breakAtTilde(text) {
+  const parts = String(text).split('~');
+  return parts.flatMap((p, i) => (i < parts.length - 1 ? [`${p}~`, h('wbr')] : [p]));
+}
+
+// A 2-column grid of big numbers (no cards): name, value, small note.
+function factNodes(cells, kind) {
+  return [h('section', { class: `facts ${kind}` }, cells.map(c => h('div', { class: 'fact' },
+    h('p', { class: 'k' }, c.k),
+    h('p', { class: `v${c.unknown ? ' unknown' : ''}${c.down ? ' down' : ''}` }, breakAtTilde(c.v)),
+    c.s && h('p', { class: `s${c.today ? ' today' : ''}${c.down ? ' down' : ''}` }, c.s))))];
+}
+
+// The risk signals as a 3-column table: signal | this stock | the rule that makes it a risk.
+function signalNodes(ipo) {
+  const rows = signalRows(ipo);
+  if (!rows.length) return [];
+  const table = h('table', { class: 'sig' },
+    h('thead', {}, h('tr', {}, h('th', {}, '신호'), h('th', {}, '이 종목'), h('th', {}, '위험 기준'))),
+    h('tbody', {}, rows.map(r => h('tr', {}, h('td', {}, r.label),
+      h('td', { class: r.tone === 'risk' ? 'hit' : r.tone === 'unknown' ? 'unk' : '' }, r.text),
+      h('td', { class: 'rule' }, r.rule)))));
+  return [h('section', { class: 'sec' }, h('h3', {}, '위험 신호 ', h('span', {}, `${rows.length}개 중 ${ipo.flag_count || 0}개`)), table)];
 }
 
 function patternNodes(ipo) {
   const list = ipo.patterns || [];
   if (!list.length) return [];
-  const nodes = [h('h4', {}, '과거 패턴')];
+  const inner = [];
   const risks = list.filter(p => p.kind === 'risk');
   const safes = list.filter(p => p.kind === 'safe');
   for (const p of risks) {
     const rate = p.close_down != null ? `${(p.close_down * 100).toFixed(0)}%` : '-';
     const open = p.phase === 'post' && p.open_down != null ? ` · 시초가 ${(p.open_down * 100).toFixed(0)}%` : '';
-    nodes.push(kv(p.label, `하락 ${rate}${open} · ${p.n}개`, 'flag'));
+    inner.push(kv(p.label, `하락 ${rate}${open} · ${p.n}개`, 'flag'));
   }
   for (const p of safes) {
-    nodes.push(kv(p.label, `하락 ${(p.close_down * 100).toFixed(0)}% · ${p.n}개`));
+    inner.push(kv(p.label, `하락 ${(p.close_down * 100).toFixed(0)}% · ${p.n}개`));
   }
-  return nodes;
-}
-
-function resultNodes(ipo) {
-  const base = ipo.final_price;
-  const nodes = [h('h4', {}, '상장 결과'), kv('공모가', won(base))];
-  if (ipo.open_price != null) nodes.push(kv('시초가', `${won(ipo.open_price)} (${pct(ipo.open_price / base - 1)})`));
-  nodes.push(kv('첫날 종가', `${won(ipo.first_close)} (${pct(ipo.first_close / base - 1)})`));
-  return nodes;
+  const worst = Math.max(0, ...risks.map(p => p.close_down || 0));
+  const title = `과거 패턴 ${list.length}개${risks.length ? ` · 최대 하락 ${(worst * 100).toFixed(0)}%` : ''}`;
+  return [h('details', { class: 'drop' }, h('summary', {}, h('span', {}, title)), inner)];
 }
 
 function probabilityNodes(ipo) {
@@ -383,7 +378,13 @@ function referenceNodes(ipo) {
   }
   const e = p.open || p.close;
   const title = e ? `참고: 가격 예측 (오차 ±${(e.mae * 100).toFixed(0)}%p)` : '참고: 비슷했던 과거 공모주';
-  return [h('details', { class: 'drop' }, h('summary', {}, h('span', {}, title)), inner)];
+  return [h('h4', {}, title), ...inner];
+}
+
+// Both model sections in one folded block.
+function modelNodes(ipo) {
+  const inner = [...probabilityNodes(ipo), ...referenceNodes(ipo)];
+  return inner.length ? [h('details', { class: 'drop' }, h('summary', {}, h('span', {}, '모델 · 가격 예측 참고')), inner)] : [];
 }
 
 function renderRecord() {

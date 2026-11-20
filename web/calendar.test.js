@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { monthGrid, barsForMonth, listForMonth, needsRefresh, splitSegments } from './calendar.js';
+import { monthGrid, barsForMonth, listForMonth, needsRefresh, splitSegments, signalRows, evidenceLine, trustText, verdictHeader, factGrid, resultGrid } from './calendar.js';
 
 const A = { no: 77, name: 'A', sub_start: '2026-11-27', sub_end: '2026-11-30', flag_count: 2, is_spac: false };
 
@@ -495,7 +495,7 @@ test('barTone: a listed stock is "done"', () => {
   assert.equal(barTone(BT({ first_close: 12000, final_price: 10000, sub_end: '2026-11-18' }), '2026-11-19'), 'done');
 });
 
-import { subscriptionFacts, offerInfoRows } from './calendar.js';
+import { offerInfoRows } from './calendar.js';
 
 const UC = {
   final_price: 19000, band_low: 19000, band_high: 23000, retail_deposit_pct: 50, refund_date: '2026-11-23',
@@ -507,30 +507,9 @@ const UC = {
   revenue_mil: 12345, net_income_mil: -3600, demand_start: '2026-11-09', demand_end: '2026-11-13', inst_count: 150,
 };
 
-test('subscriptionFacts: price, minimum amount (10 shares assumed) and refund day, with real values', () => {
-  assert.deepEqual(subscriptionFacts(UC), [
-    { k: '공모가', v: '19,000원 (희망 19,000~23,000원)', unknown: false },
-    { k: '최소 증거금 · 10주 가정', v: '95,000원 (10주 190,000원의 50%)', unknown: false },
-    { k: '환불일', v: '11/23', unknown: false },
-  ]);
-});
-
-test('subscriptionFacts: before the price is fixed the band top is used and said so', () => {
-  const f = subscriptionFacts({ ...UC, final_price: null });
-  assert.equal(f[0].v, '희망 19,000~23,000원 · 확정 전');
-  assert.equal(f[1].v, '115,000원 (10주 230,000원의 50%) · 희망 상단 기준');  // 10 x 23,000 x 50%
-});
-
-test('subscriptionFacts: unknown values say 확인 불가 and are never guessed', () => {
-  const f = subscriptionFacts({ no: 1, name: 'x' });
-  assert.deepEqual(f.map(x => [x.v, x.unknown]), [['확인 불가', true], ['확인 불가', true], ['확인 불가', true]]);
-  assert.deepEqual(subscriptionFacts({ ...UC, retail_deposit_pct: null })[1], { k: '최소 증거금 · 10주 가정', v: '확인 불가', unknown: true });  // no 50% guess
-  assert.equal(subscriptionFacts({ ...UC, final_price: null, band_high: null })[1].unknown, true);
-});
-
-test('subscriptionFacts: a price without a band is shown plainly; a band without an exact price is "확정 전"', () => {
-  assert.equal(subscriptionFacts({ final_price: 8000 })[0].v, '8,000원');
-  assert.equal(subscriptionFacts({ band_low: 10500, band_high: 13000 })[0].v, '희망 10,500~13,000원 · 확정 전');
+test('factGrid: a price without a band is shown plainly; a band without an exact price is "확정 전"', () => {
+  assert.equal(factGrid({ final_price: 8000 }, '2026-11-10')[0].v, '8,000원');
+  assert.deepEqual(factGrid({ band_low: 10500, band_high: 13000 }, '2026-11-10')[0], { k: '공모가', v: '10,500~13,000원', s: '확정 전', unknown: false, today: false });
 });
 
 test('offerInfoRows: amount, shares, brokers, industry, financials, demand period, institutions', () => {
@@ -561,9 +540,9 @@ test('offerInfoRows: a large amount gets a thousands separator', () => {
   assert.equal(offerInfoRows({ offer_amount_mil: 152000 })[0].v, '1,520억 원');
 });
 
-test('subscriptionFacts: a band whose ends are equal (a spac) is shown as one price, not "2,000~2,000"', () => {
-  assert.equal(subscriptionFacts({ band_low: 2000, band_high: 2000 })[0].v, '희망 2,000원 · 확정 전');
-  assert.equal(subscriptionFacts({ final_price: 2000, band_low: 2000, band_high: 2000 })[0].v, '2,000원 (희망 2,000원)');
+test('factGrid: a band whose ends are equal (a spac) is shown as one price, not "2,000~2,000"', () => {
+  assert.equal(factGrid({ band_low: 2000, band_high: 2000 }, '2026-11-10')[0].v, '2,000원');
+  assert.equal(factGrid({ final_price: 2000, band_low: 2000, band_high: 2000 }, '2026-11-10')[0].s, '희망 2,000원');
 });
 
 test('offerInfoRows: a retail share that is still a range is shown as a range, without a percentage', () => {
@@ -668,4 +647,111 @@ test('splitSegments: a value is cut at " · " only; a value without it stays one
   assert.deepEqual(splitSegments('하락·상승'), ['하락·상승']);   // a dot without spaces is not a separator
   assert.deepEqual(splitSegments(''), ['']);
   assert.deepEqual(splitSegments(null), ['']);
+});
+
+
+// --- detail screen: verdict header, fact grid, signal table ---
+const sig = (key, label, value, flag, rule, severity) => ({ key, label, value, flag, rule, severity });
+const UCAST_SIGNALS = [
+  sig('price_position', '공모가 위치', 19000, true, '하단 이하', 1.0),
+  sig('inst_competition', '기관 경쟁률', 173.4, true, '300대 1 미만', 1.73),
+  sig('lockup', '의무보유확약', 0.57, true, '5% 미만', 8.77),
+  sig('below_band', '하단 미만 신청', 56.17, true, '20% 이상', 2.81),
+  sig('float', '유통가능물량', 36.81, true, '35% 이상', 1.05),
+  sig('mood', '최근 시장 분위기', 0.6, true, '5/10 이상', 1.2),
+];
+const UCAST = { ...UC, no: 2352, first_close: null, inst_competition: 173.4, signals: UCAST_SIGNALS, warning: 'strong', flag_count: 6, unknown_count: 0,
+  prediction: { open_down: { warn: true, warned: 10, caught: 7, strong_warned: 10, strong_caught: 7, n_down: 18 } }, sub_start: '2026-11-18', sub_end: '2026-11-19', listing_date: '2026-11-30' };
+const UC2 = { ...UC, sub_start: '2026-11-18', sub_end: '2026-11-19', listing_date: '2026-11-30', first_close: null };
+
+test('signalRows: risk first (largest severity first), then unknown, then normal; each row has value text and its rule', () => {
+  const rows = signalRows({ signals: [
+    sig('float', '유통가능물량', 20, false, '35% 이상', 0.57),
+    sig('below_band', '하단 미만 신청', null, null, '20% 이상', null),
+    sig('inst_competition', '기관 경쟁률', 173.4, true, '300대 1 미만', 1.73),
+    sig('lockup', '의무보유확약', 0.57, true, '5% 미만', 8.77),
+  ] });
+  assert.deepEqual(rows.map(r => [r.label, r.text, r.rule, r.tone]), [
+    ['의무보유확약', '0.57%', '5% 미만', 'risk'],
+    ['기관 경쟁률', '173대 1', '300대 1 미만', 'risk'],
+    ['하단 미만 신청', '확인 불가', '20% 이상', 'unknown'],
+    ['유통가능물량', '20%', '35% 이상', 'ok'],
+  ]);
+});
+
+test('signalRows: price position and market mood wording; old data without rule says 확인 불가 in the rule column', () => {
+  const by = Object.fromEntries(signalRows(UCAST).map(r => [r.label, r]));
+  assert.equal(by['공모가 위치'].text, '하단 확정');
+  assert.equal(by['최근 시장 분위기'].text, '6/10 하락');
+  assert.equal(signalRows({ signals: [{ key: 'price_position', label: '공모가 위치', value: 21000, flag: false }] })[0].text, '21,000원');
+  const old = signalRows({ signals: [{ key: 'lockup', label: '의무보유확약', value: 0.57, flag: true }] })[0];
+  assert.equal(old.rule, '확인 불가');
+  assert.equal(old.tone, 'risk');
+});
+
+test('signalRows: without severity the original order of the risk rows is kept', () => {
+  const rows = signalRows({ signals: [
+    { key: 'lockup', label: 'A', value: 1, flag: true, rule: '5% 미만' },
+    { key: 'float', label: 'B', value: 40, flag: true, rule: '35% 이상' },
+  ] });
+  assert.deepEqual(rows.map(r => r.label), ['A', 'B']);
+});
+
+test('evidenceLine: the two most severe risk signals as short phrases (rounded like the mockup)', () => {
+  assert.equal(evidenceLine(UCAST), '의무보유확약 0.6%, 기관 주문 56%⁠가 희망가 하단 아래');
+  const one = { signals: [sig('inst_competition', '기관 경쟁률', 173.4, true, '300대 1 미만', 1.73), sig('lockup', '확약', 9, false, '5% 미만', 0.5)] };
+  assert.equal(evidenceLine(one), '기관 경쟁률 173대 1');
+  assert.equal(evidenceLine({ signals: [sig('lockup', '확약', 9, false, '5% 미만', 0.5)] }), '');
+  const two = evidenceLine({ signals: [
+    sig('price_position', '', 19000, true, '하단 이하', 1.0), sig('float', '', 36.81, true, '35% 이상', 1.05),
+    sig('mood', '', 0.6, true, '5/10 이상', 1.2)] });
+  assert.equal(two, '최근 공모주 10개 중 6개 하락, 유통가능물량 37%');
+  assert.equal(evidenceLine({ signals: [sig('price_position', '', 19000, true, '하단 이하', 1.0)] }), '공모가가 희망 하단에 확정');
+});
+
+test('trustText: the past hit record as a sentence', () => {
+  assert.equal(trustText({ warned: 10, caught: 7, n_down: 18 }, false), '과거 이 경고 10번 중 7번이 실제로 하락했어요');
+  assert.equal(trustText({ strong_warned: 4, strong_caught: 3, warned: 10, caught: 7, n_down: 18 }, true), '과거 이 경고 4번 중 3번이 실제로 하락했어요');
+  assert.equal(trustText({ precision: 0.62, recall: 0.5 }, false), '과거 이 경고의 62%가 실제로 하락했어요');
+  assert.equal(trustText({}, false), null);
+});
+
+test('verdictHeader: warning box, no-warning line, waiting, spac and listed stocks', () => {
+  assert.deepEqual(verdictHeader(UCAST), { kind: 'warn', title: '강한 하락 경고', why: '의무보유확약 0.6%, 기관 주문 56%⁠가 희망가 하단 아래', trust: '과거 이 경고 10번 중 7번이 실제로 하락했어요', conflict: false });
+  const calm = verdictHeader({ ...UCAST, warning: null, signals: [sig('lockup', '확약', 9, false, '5% 미만', 0.5)], prediction: {} });
+  assert.deepEqual(calm, { kind: 'ok', title: '하락 경고 없음', why: '', trust: null, conflict: false });
+  assert.equal(verdictHeader({ ...UCAST, warning: null, prediction: { conflict: true } }).conflict, true);
+  assert.equal(verdictHeader({ ...UCAST, warning: null }).why, '의무보유확약 0.6%, 기관 주문 56%⁠가 희망가 하단 아래');
+  assert.deepEqual(verdictHeader({ ...UCAST, inst_competition: null }), { kind: 'wait', title: '기관 수요예측 결과가 아직 없어요', why: '', trust: null, conflict: false });
+  assert.equal(verdictHeader({ ...UCAST, first_close: 21000 }), null);
+  assert.equal(verdictHeader({ ...UCAST, is_spac: true }), null);
+});
+
+test('factGrid: four cells with real values, sub text and unknowns', () => {
+  assert.deepEqual(factGrid(UC2, '2026-11-19'), [
+    { k: '공모가', v: '19,000원', s: '희망 19,000~23,000원', unknown: false, today: false },
+    { k: '최소 증거금', v: '95,000원', s: '10주 기준, 증거금 50%', unknown: false, today: false },
+    { k: '청약', v: '11/18~11/19', s: '오늘 마감', unknown: false, today: true },
+    { k: '상장 · 환불', v: '11/30', s: '환불 11/23', unknown: false, today: false },
+  ]);
+});
+
+test('factGrid: before the price is fixed, unknown values and the subscription state words', () => {
+  const g = factGrid({ ...UC2, final_price: null }, '2026-11-10');
+  assert.equal(g[0].v, '19,000~23,000원'); assert.equal(g[0].s, '확정 전');
+  assert.equal(g[1].v, '115,000원'); assert.equal(g[1].s, '10주 기준, 증거금 50%, 희망 상단 기준');
+  assert.equal(g[2].s, '예정');
+  assert.equal(factGrid(UC2, '2026-11-25')[2].s, '마감됨');
+  const u = factGrid({ no: 1, name: 'x', sub_start: '2026-11-18', sub_end: '2026-11-19' }, '2026-11-18');
+  assert.deepEqual(u.map(x => [x.v, x.unknown]), [['확인 불가', true], ['확인 불가', true], ['11/18~11/19', false], ['미정', false]]);
+  assert.equal(u[3].s, '환불일 확인 불가');
+});
+
+test('resultGrid: price, open and first close with changes, and the listing day', () => {
+  const g = resultGrid({ final_price: 10000, open_price: 12000, first_close: 9000, listing_date: '2026-11-30' });
+  assert.deepEqual(g.map(x => [x.k, x.v, x.s]), [
+    ['공모가', '10,000원', ''], ['시초가', '12,000원', '+20%'], ['첫날 종가', '9,000원', '-10%'], ['상장일', '11/30', ''],
+  ]);
+  assert.equal(g[2].down, true); assert.equal(g[1].down, false);
+  assert.equal(resultGrid({ final_price: 10000, open_price: null, first_close: 9000 }).length, 2);   // no open price, no listing day: just two cells
 });
