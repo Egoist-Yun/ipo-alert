@@ -27,6 +27,20 @@ _session.mount("https://", _LegacyTlsAdapter())
 _last_request = 0.0
 
 
+# 38.co.kr pages are cp949 (a superset of euc-kr: it also has the extended hangul euc-kr lacks). The saved pages decode with 0
+# replacement characters, and 900+ real detail pages showed at most 2 (under plain euc-kr), so 20 leaves room for a stray byte while a
+# page in the wrong encoding or a binary body (hundreds) fails loudly instead of becoming text full of U+FFFD.
+MAX_REPLACEMENT_CHARS = 20
+
+
+def decode_page(raw: bytes, url: str) -> str:
+    text = raw.decode("cp949", errors="replace")
+    bad = text.count("�")
+    if bad > MAX_REPLACEMENT_CHARS:
+        raise FetchError(f"{url}: {bad} undecodable characters (wrong encoding or not a page?)")
+    return text
+
+
 def get_html(url: str) -> str:
     global _last_request
     wait = MIN_INTERVAL - (time.monotonic() - _last_request)
@@ -39,4 +53,4 @@ def get_html(url: str) -> str:
     except requests.RequestException as e:
         _last_request = time.monotonic()
         raise FetchError(f"{url}: {e}") from e
-    return resp.content.decode("euc-kr", errors="replace")
+    return decode_page(resp.content, url)
