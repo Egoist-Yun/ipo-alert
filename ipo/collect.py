@@ -2,7 +2,7 @@ import re
 from datetime import datetime
 
 from ipo import config
-from ipo.fetch import get_html
+from ipo.fetch import FetchError, get_html
 from ipo.models import Ipo, first_day_return
 from ipo.parse import ParseError, parse_demand, parse_detail, parse_listing, parse_schedule
 
@@ -15,6 +15,21 @@ def _fill(ipo: Ipo, **fields) -> None:
             continue
         if getattr(ipo, key) in (None, []):
             setattr(ipo, key, value)
+
+
+# A single stock's detail page can fail on its own (a withdrawn listing, a maintenance page), so that stock is skipped and reported.
+# But when more than ~30% of the attempted pages fail the site layout changed, and the whole run must fail loudly instead.
+MAX_DETAIL_FAIL_RATIO = 0.3
+
+
+def detail_failure(no: int, name: str, error: Exception) -> dict:
+    return {"no": no, "name": name, "error": f"{type(error).__name__}: {error}"}
+
+
+def check_detail_failures(failures: list[dict], attempted: int) -> None:
+    if attempted and len(failures) / attempted > MAX_DETAIL_FAIL_RATIO:
+        names = ", ".join(f["name"] for f in failures)
+        raise ParseError(f"{len(failures)} of {attempted} detail pages failed (layout changed?): {names}")
 
 
 def detail_url(no: int) -> str:
@@ -43,7 +58,9 @@ def apply_detail(ipo: Ipo, detail: dict) -> None:
     ipo.is_bio = bool(ipo.industry and _BIO.search(ipo.industry))
 
 
-def collect_current(fetch=get_html, cache: dict | None = None, today: str | None = None) -> list[Ipo]:
+def collect_current(fetch=get_html, cache: dict | None = None, today: str | None = None,
+                    failures: list | None = None) -> list[Ipo]:
+    """`failures` (if given) receives {no, name, error} for each stock whose detail page was skipped."""
     today = today or datetime.now(config.KST).date().isoformat()
     cache = {} if cache is None else cache
 
@@ -63,6 +80,8 @@ def collect_current(fetch=get_html, cache: dict | None = None, today: str | None
             ipo = by_no.setdefault(no, Ipo(no=no, name=name, url=detail_url(no)))
             _fill(ipo, **row)
 
+    failed: list[dict] = []
+    attempted = 0
     for ipo in by_no.values():
         ipo.is_spac = "스팩" in ipo.name
         if ipo.is_spac:
@@ -73,10 +92,18 @@ def collect_current(fetch=get_html, cache: dict | None = None, today: str | None
         if ipo.no in cache:
             detail = cache[ipo.no]
         else:
-            detail = parse_detail(fetch(detail_url(ipo.no)))
+            attempted += 1
+            try:
+                detail = parse_detail(fetch(detail_url(ipo.no)))
+            except (ParseError, FetchError) as e:
+                failed.append(detail_failure(ipo.no, ipo.name, e))
+                continue  # the table values stay; nothing is cached for this stock, it is tried again next run
             if ipo.inst_competition is not None:
                 cache[ipo.no] = detail
         apply_detail(ipo, detail)
+    check_detail_failures(failed, attempted)
+    if failures is not None:
+        failures.extend(failed)
     return list(by_no.values())
 
 

@@ -4,18 +4,28 @@ from pathlib import Path
 from statistics import median
 
 from ipo import config
-from ipo.collect import apply_detail, detail_url, market_mood
-from ipo.fetch import get_html
+from ipo.collect import apply_detail, check_detail_failures, detail_failure, detail_url, market_mood
+from ipo.fetch import FetchError, get_html
 from ipo.models import Ipo, first_day_return
-from ipo.parse import parse_detail, parse_listing
+from ipo.parse import ParseError, parse_detail, parse_listing
 from ipo.signals import score
+
+
+# Listed stocks without a first-day close are normal in small numbers (listing today, price not out yet: ~25% of a real page).
+# When half or more of the non-spac rows lack it, the table's columns moved and the history would silently stop growing.
+MAX_NO_CLOSE_RATIO = 0.5
+MAX_UPDATE_PAGES = 5  # a run reads listing pages until it meets a stock it already knows, but never more than this many
 
 
 def _listed_rows(pages: range, fetch) -> list[dict]:
     rows = []
     for page in pages:
-        rows += parse_listing(fetch(config.BASE_URL + f"index.htm?o=nw&page={page}"))
-    return [r for r in rows if r["first_close"] is not None and "스팩" not in r["name"]]
+        page_rows = [r for r in parse_listing(fetch(config.BASE_URL + f"index.htm?o=nw&page={page}")) if "스팩" not in r["name"]]
+        missing = sum(1 for r in page_rows if r["first_close"] is None)
+        if page_rows and missing / len(page_rows) >= MAX_NO_CLOSE_RATIO:
+            raise ParseError(f"{missing} of {len(page_rows)} listed rows have no first-day close (layout changed?)")
+        rows += page_rows
+    return [r for r in rows if r["first_close"] is not None]
 
 
 def _make(row: dict, fetch) -> Ipo:
@@ -26,14 +36,34 @@ def _make(row: dict, fetch) -> Ipo:
     return ipo
 
 
-def build_history(pages: int, fetch=get_html) -> list[Ipo]:
-    items = [_make(r, fetch) for r in _listed_rows(range(1, pages + 1), fetch)]
+def _make_all(rows: list[dict], fetch, failures: list | None) -> list[Ipo]:
+    """Each stock on its own: one failing detail page skips that stock (it is retried next run); too many failures raise."""
+    made, failed = [], []
+    for row in rows:
+        try:
+            made.append(_make(row, fetch))
+        except (ParseError, FetchError) as e:
+            failed.append(detail_failure(row["no"], row["name"], e))
+    check_detail_failures(failed, len(rows))
+    if failures is not None:
+        failures.extend(failed)
+    return made
+
+
+def build_history(pages: int, fetch=get_html, failures: list | None = None) -> list[Ipo]:
+    items = _make_all(_listed_rows(range(1, pages + 1), fetch), fetch, failures)
     return sorted(items, key=lambda i: (i.listing_date or "", i.no))
 
 
-def update_history(existing: list[Ipo], fetch=get_html) -> list[Ipo]:
+def update_history(existing: list[Ipo], fetch=get_html, failures: list | None = None) -> list[Ipo]:
     known = {i.no for i in existing}
-    new = [_make(r, fetch) for r in _listed_rows(range(1, 2), fetch) if r["no"] not in known]
+    rows = []
+    for page in range(1, MAX_UPDATE_PAGES + 1):
+        page_rows = _listed_rows(range(page, page + 1), fetch)
+        rows += [r for r in page_rows if r["no"] not in known and r["no"] not in {x["no"] for x in rows}]
+        if any(r["no"] in known for r in page_rows):
+            break  # reached stocks we already have: nothing older is new
+    new = _make_all(rows, fetch, failures)
     return sorted(existing + new, key=lambda i: (i.listing_date or "", i.no))
 
 

@@ -110,11 +110,74 @@ def test_apply_detail_keeps_retail_shares_high_when_the_page_has_no_retail_value
     assert (ipo.retail_shares, ipo.retail_shares_high) == (542500, 651000)
 
 
-def test_collect_fails_loudly_when_a_detail_page_lost_its_layout_and_caches_nothing_for_it():
+DETAIL = "https://www.38.co.kr/html/fund/?o=v&no="
+
+
+def _broken_fetch(broken: set):
+    """The real table fixtures, every detail page fine except the numbers in `broken`."""
+    def fetch(url):
+        if url.startswith(DETAIL) and int(url.rsplit("=", 1)[1]) in broken:
+            return "<html><body>점검 중입니다</body></html>"
+        return fake_fetch(url)
+    return fetch
+
+
+def test_one_broken_detail_page_is_skipped_reported_and_never_cached():
+    cache, failures = {}, []
+    ipos = collect_current(fetch=_broken_fetch({2352}), cache=cache, today="2026-11-17", failures=failures)
+    assert [(f["no"], f["name"]) for f in failures] == [(2352, next(i.name for i in ipos if i.no == 2352))]
+    assert "anchor" in failures[0]["error"]
+    bad = next(i for i in ipos if i.no == 2352)
+    assert bad.inst_competition is not None and bad.market is None      # the table values stay, no detail was applied
+    assert 2352 not in cache and 2336 in cache                          # 2352 has a competition value: it would be cached if it were good
+
+
+def test_a_fetch_error_on_one_detail_page_is_also_skipped():
+    from ipo.fetch import FetchError
+
+    def fetch(url):
+        if url == DETAIL + "2352":
+            raise FetchError(url + ": timeout")
+        return fake_fetch(url)
+    failures = []
+    collect_current(fetch=fetch, today="2026-11-17", failures=failures)
+    assert [f["no"] for f in failures] == [2352] and "timeout" in failures[0]["error"]
+
+
+def test_other_exceptions_are_not_swallowed():
+    import pytest
+
+    def fetch(url):
+        if url == DETAIL + "2352":
+            raise ValueError("bug")
+        return fake_fetch(url)
+    with pytest.raises(ValueError):
+        collect_current(fetch=fetch, today="2026-11-17")
+
+
+def test_too_many_broken_detail_pages_fail_the_whole_collection_with_counts_and_names():
+    import pytest
+    from ipo.collect import MAX_DETAIL_FAIL_RATIO
+    from ipo.parse import ParseError
+    attempted = [int(u.rsplit("=", 1)[1]) for u in _seen_details()]
+    limit = int(len(attempted) * MAX_DETAIL_FAIL_RATIO)               # the most failures that is still allowed
+    collect_current(fetch=_broken_fetch(set(attempted[:limit])), today="2026-11-17", failures=[])
+    with pytest.raises(ParseError) as e:
+        collect_current(fetch=_broken_fetch(set(attempted[:limit + 1])), today="2026-11-17", failures=[])
+    msg = str(e.value)
+    assert f"{limit + 1} of {len(attempted)}" in msg
+
+
+def _seen_details():
+    seen = []
+    collect_current(fetch=lambda u: (seen.append(u), fake_fetch(u))[1], today="2026-11-17")
+    return [u for u in seen if u.startswith(DETAIL)]
+
+
+def test_a_page_without_any_anchor_never_reaches_the_cache_even_when_everything_fails():
     import pytest
     from ipo.parse import ParseError
     cache = {}
-    pages = {**PAGES, "https://www.38.co.kr/html/fund/?o=v&no=2352": "<html><body>점검 중입니다</body></html>"}
     with pytest.raises(ParseError):
-        collect_current(fetch=lambda u: pages.get(u, BARE_DETAIL), cache=cache, today="2026-11-17")
-    assert 2352 not in cache          # an empty page must never be remembered as the stock's detail
+        collect_current(fetch=lambda u: "<html><body>점검</body></html>" if u.startswith(DETAIL) else fake_fetch(u), cache=cache, today="2026-11-17")
+    assert cache == {}

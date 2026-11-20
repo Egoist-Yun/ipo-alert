@@ -48,14 +48,14 @@ def _atomic_write(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
-def _build(data_dir: Path, now_kst: datetime, fetch) -> list:
+def _build(data_dir: Path, now_kst: datetime, fetch, failures: list | None = None) -> list:
     today = now_kst.date().isoformat()
     history_path = data_dir / "history.json"
     history = load_history(history_path) if history_path.exists() else []
-    history = update_history(history, fetch=fetch)
+    history = update_history(history, fetch=fetch, failures=failures)
     save_history(history_path, history)
 
-    current = collect_current(fetch=fetch, today=today)
+    current = collect_current(fetch=fetch, today=today, failures=failures)
     if not current:
         raise RuntimeError("no IPO rows collected")
     mood = market_mood(history, today)
@@ -91,8 +91,9 @@ def _warning_pre(pred: dict | None, matched: list[dict]) -> str | None:
     return warning_level({"prob": prob}, matched) if prob else None
 
 
-def _update_ledger(data_dir: Path, ipos: list, now_kst: datetime) -> dict | None:
-    """Save new predictions, fill results, refresh the score. A failure here must never break the calendar."""
+def _update_ledger(data_dir: Path, ipos: list, now_kst: datetime, errors: list | None = None) -> dict | None:
+    """Save new predictions, fill results, refresh the score. A failure here must never break the calendar:
+    it is logged, appended to `errors` (reported in the payload and by an alert) and the run goes on."""
     try:
         path = data_dir / "predictions.json"
         ledger = load_ledger(path)
@@ -102,9 +103,25 @@ def _update_ledger(data_dir: Path, ipos: list, now_kst: datetime) -> dict | None
         summary = summarize(ledger)
         update_backtest_md(data_dir / "backtest.md", ledger_markdown(summary))
         return summary
-    except Exception:
+    except Exception as e:
         traceback.print_exc()
+        if errors is not None:
+            errors.append(f"{type(e).__name__}: {e}")
         return None
+
+
+def _problem_alerts(topic: str, failures: list, ledger_errors: list, post) -> None:
+    """Short notices for problems that did not stop the run. A failed notice is only logged."""
+    notices = []
+    if failures:
+        notices.append({"title": "공모주 상세 수집 일부 실패", "message": ", ".join(f["name"] for f in failures)[:300]})
+    if ledger_errors:
+        notices.append({"title": "공모주 기록부 갱신 실패", "message": ledger_errors[0][:300]})
+    for notice in notices:
+        try:
+            send(notice, topic, post=post)
+        except Exception:
+            traceback.print_exc()
 
 
 def _send_alerts(data_dir: Path, ipos: list, topic: str, site_url: str, now_kst: datetime, post) -> None:
@@ -146,9 +163,16 @@ def run(data_dir: Path, topic: str | None, site_url: str, now_kst: datetime,
     data_dir = Path(data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
     try:
-        ipos = _build(data_dir, now_kst, fetch)
+        raw_failures: list = []
+        ledger_errors: list = []
+        ipos = _build(data_dir, now_kst, fetch, raw_failures)
+        failures = list({f["no"]: f for f in raw_failures}.values())  # a stock can fail in both the history and the current pass
         payload = {"updated_at": now_kst.isoformat(), "disclaimer": config.DISCLAIMER,
-                   "ledger": _update_ledger(data_dir, ipos, now_kst), "ipos": [asdict(i) for i in ipos]}
+                   "ledger": _update_ledger(data_dir, ipos, now_kst, ledger_errors), "ipos": [asdict(i) for i in ipos]}
+        if failures:
+            payload["detail_failures"] = failures
+        if ledger_errors:
+            payload["ledger_error"] = ledger_errors[0]
         _atomic_write(data_dir / "ipos.json", json.dumps(payload, ensure_ascii=False))
     except Exception as e:
         traceback.print_exc()
@@ -160,6 +184,7 @@ def run(data_dir: Path, topic: str | None, site_url: str, now_kst: datetime,
         return 1
 
     if topic:
+        _problem_alerts(topic, failures, ledger_errors, post)
         _send_alerts(data_dir, ipos, topic, site_url, now_kst, post)
     return 0
 

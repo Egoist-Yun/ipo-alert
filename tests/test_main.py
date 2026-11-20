@@ -235,3 +235,58 @@ def test_warning_pre_is_none_without_a_pre_model_or_prediction():
     from ipo.main import _warning_pre
     assert _warning_pre(None, []) is None
     assert _warning_pre({"open_down": {"warn": True}}, []) is None
+
+
+def _fetch_with_broken_details(broken_nos=None):
+    """The real table fixtures; every detail page is a maintenance page, or only those in broken_nos."""
+    def fetch(url):
+        if "o=v" in url and (broken_nos is None or any(url.endswith(f"no={n}") for n in broken_nos)):
+            return "<html><body>점검 중입니다</body></html>"
+        return fake_fetch(url)
+    return fetch
+
+
+def test_one_broken_detail_page_does_not_stop_the_run_and_is_reported(tmp_path):
+    rec = Rec()
+    assert run(tmp_path, "t", "https://s/", NOW, fetch=_fetch_with_broken_details({2352}), post=rec) == 0
+    data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
+    assert [f["no"] for f in data["detail_failures"]] == [2352]
+    assert data["detail_failures"][0]["name"] == "유캐스트" and "anchor" in data["detail_failures"][0]["error"]
+    assert "유캐스트" in [i["name"] for i in data["ipos"]]                       # the stock stays on the calendar with its table values
+    alerts = [c for c in rec.calls if c["title"] == "공모주 상세 수집 일부 실패"]
+    assert len(alerts) == 1 and "유캐스트" in alerts[0]["message"]
+
+
+def test_no_failures_means_no_detail_failures_key_and_no_problem_alert(tmp_path):
+    rec = Rec()
+    run(tmp_path, "t", "https://s/", NOW, fetch=fake_fetch, post=rec)
+    assert "detail_failures" not in json.loads((tmp_path / "ipos.json").read_text("utf-8"))
+    assert not any("일부 실패" in c["title"] for c in rec.calls)
+
+
+def test_mostly_broken_detail_pages_fail_the_run_and_keep_the_old_file(tmp_path):
+    (tmp_path / "ipos.json").write_text('{"ipos":[{"no":1}]}', "utf-8")
+    rec = Rec()
+    assert run(tmp_path, "t", "https://s/", NOW, fetch=_fetch_with_broken_details(), post=rec) == 1
+    assert json.loads((tmp_path / "ipos.json").read_text("utf-8"))["ipos"] == [{"no": 1}]
+    assert rec.calls[-1]["title"] == "공모주 수집 실패" and "detail pages failed" in rec.calls[-1]["message"]
+
+
+def test_a_failed_problem_alert_is_only_logged(tmp_path):
+    def boom(url, json, timeout):
+        raise RuntimeError("ntfy down")
+    assert run(tmp_path, "t", "https://s/", NOW, fetch=_fetch_with_broken_details({2352}), post=boom) == 0
+
+
+def test_a_ledger_failure_is_reported_in_the_payload_and_by_an_alert_but_the_run_goes_on(tmp_path, monkeypatch):
+    import ipo.main as main
+
+    def boom(*a, **k):
+        raise RuntimeError("ledger broke")
+    monkeypatch.setattr(main, "record_predictions", boom)
+    rec = Rec()
+    assert run(tmp_path, "t", "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
+    data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
+    assert "ledger broke" in data["ledger_error"] and data["ledger"] is None
+    alerts = [c for c in rec.calls if c["title"] == "공모주 기록부 갱신 실패"]
+    assert len(alerts) == 1 and "ledger broke" in alerts[0]["message"]
