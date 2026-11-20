@@ -4,23 +4,18 @@ from ipo import config
 from ipo.models import Ipo
 
 
-BIG_SEVERITY = 999.0  # a zero value against a "below" rule: the most severe, not a division error
-
-
 def _num(x) -> str:
     return f"{x:g}"
 
 
 def _at_least(threshold: float, value):
-    """severity of an 'at least' rule: how many times the threshold the value is."""
-    return None if value is None else round(value / threshold, 4)
+    """severity of an 'at least' rule: the fraction by which the value is beyond the threshold (0 inside the safe side)."""
+    return None if value is None else round(max(0.0, (value - threshold) / threshold), 4)
 
 
 def _below(threshold: float, value):
-    """severity of a 'below' rule: how many times the threshold exceeds the value."""
-    if value is None:
-        return None
-    return BIG_SEVERITY if value <= 0 else round(min(threshold / value, BIG_SEVERITY), 4)
+    """severity of a 'below' rule: the fraction by which the value falls short of the threshold (0 on the safe side)."""
+    return None if value is None else round(max(0.0, (threshold - value) / threshold), 4)
 
 
 def _signal(key, label, value, flag, rule, severity):

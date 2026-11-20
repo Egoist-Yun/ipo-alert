@@ -79,8 +79,16 @@ def _build(data_dir: Path, now_kst: datetime, fetch) -> list:
         pred = None if listed else predict_for(scored, recent, ev, names, calibration=cal,
                                                 full_history=history, post_eval=post_ev)
         matched = match_patterns(scored, stats)
-        out.append(replace(scored, prediction=pred, patterns=matched, warning=warning_level(pred, matched)))
+        out.append(replace(scored, prediction=pred, patterns=matched, warning=warning_level(pred, matched),
+                           warning_pre=_warning_pre(pred, matched)))
     return sorted(out, key=lambda i: (i.sub_start, i.no))
+
+
+def _warning_pre(pred: dict | None, matched: list[dict]) -> str | None:
+    """The judgment of the pre-subscription model alone (the same rule as the ledger's 'pre' level), kept next to
+    `warning` because after the subscription closes `warning` follows the open-price model and can differ."""
+    prob = (pred or {}).get("prob")
+    return warning_level({"prob": prob}, matched) if prob else None
 
 
 def _update_ledger(data_dir: Path, ipos: list, now_kst: datetime) -> dict | None:

@@ -64,24 +64,33 @@ def test_every_signal_carries_its_rule_text_from_config():
     assert sig["mood"]["rule"] == "5/10 이상"
 
 
-def test_severity_ratio_for_at_least_rules_is_value_over_threshold():
+def test_severity_for_at_least_rules_is_the_fraction_beyond_the_threshold():
     sig = _by_key(replace(NEXI, below_band_pct=40.0, float_pct=70.0), 0.75)
-    assert sig["below_band"]["severity"] == 2.0
-    assert sig["float"]["severity"] == 2.0
-    assert sig["mood"]["severity"] == 1.5
+    assert sig["below_band"]["severity"] == 1.0           # (40 - 20) / 20
+    assert sig["float"]["severity"] == 1.0                # (70 - 35) / 35
+    assert sig["mood"]["severity"] == 0.5                 # (0.75 - 0.5) / 0.5
 
 
-def test_severity_ratio_for_below_rules_is_threshold_over_value():
+def test_severity_for_below_rules_is_the_fraction_short_of_the_threshold():
     sig = _by_key(replace(NEXI, inst_competition=150.0, lockup_pct=2.5), None)
-    assert sig["inst_competition"]["severity"] == 2.0
-    assert sig["lockup"]["severity"] == 2.0
+    assert sig["inst_competition"]["severity"] == 0.5     # (300 - 150) / 300
+    assert sig["lockup"]["severity"] == 0.5               # (5 - 2.5) / 5
 
 
-def test_severity_at_the_boundary_is_one_and_zero_value_is_a_large_number():
-    sig = _by_key(replace(NEXI, inst_competition=300, lockup_pct=0.0, below_band_pct=20.0, float_pct=35.0), 0.5)
-    assert sig["inst_competition"]["severity"] == 1.0 and sig["below_band"]["severity"] == 1.0
-    assert sig["float"]["severity"] == 1.0 and sig["mood"]["severity"] == 1.0
-    assert sig["lockup"]["severity"] >= 100                       # a zero lock-up is the most severe, not a division error
+def test_severity_is_zero_at_the_boundary_one_for_a_zero_value_and_never_negative():
+    sig = _by_key(replace(NEXI, inst_competition=300, lockup_pct=5.0, below_band_pct=20.0, float_pct=35.0), 0.5)
+    assert all(sig[k]["severity"] == 0.0 for k in ("inst_competition", "lockup", "below_band", "float", "mood"))
+    assert _by_key(replace(NEXI, lockup_pct=0.0))["lockup"]["severity"] == 1.0      # a zero lock-up is the largest shortfall: 1, not infinite
+    safe = _by_key(replace(NEXI, inst_competition=1200, lockup_pct=20.0, below_band_pct=0.0, float_pct=10.0), 0.1)
+    assert all(safe[k]["severity"] == 0.0 for k in ("inst_competition", "lockup", "below_band", "float", "mood"))
+
+
+def test_ucast_severity_order_puts_the_below_band_order_flow_first():
+    ucast = replace(NEXI, band_low=19000, final_price=19000, inst_competition=173.4, lockup_pct=0.57, below_band_pct=56.17, float_pct=36.81)
+    sig = _by_key(ucast, 0.6)
+    order = sorted((k for k in sig), key=lambda k: -(sig[k]["severity"] or 0))
+    assert order == ["below_band", "price_position", "lockup", "inst_competition", "mood", "float"]   # price position is a flat 1.0 when at the bottom
+    assert round(sig["below_band"]["severity"], 2) == 1.81 and round(sig["lockup"]["severity"], 2) == 0.89
 
 
 def test_severity_of_price_position_and_missing_values():

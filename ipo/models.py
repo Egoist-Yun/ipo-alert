@@ -45,6 +45,7 @@ class Ipo:
     prediction: dict | None = None
     patterns: list[dict] = field(default_factory=list)
     warning: str | None = None  # None | "warn" | "strong"
+    warning_pre: str | None = None  # the same judgment on the pre-subscription model only (differs from warning once the subscription has closed)
 
 
 def first_day_return(ipo: Ipo) -> float | None:

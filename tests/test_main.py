@@ -218,3 +218,20 @@ def test_a_failed_morning_send_is_not_recorded_and_the_afternoon_run_tries_again
     _send_alerts(tmp_path, [ipo], "t", "https://s/", datetime(2026, 11, 19, 17, 47, tzinfo=KST), post)
     assert [c["title"] for c in calls] == ["수요예측 결과 1건"]
     assert json.loads((tmp_path / "state.json").read_text("utf-8"))["digest_date"] == "2026-11-19"
+
+
+def test_warning_pre_uses_the_pre_subscription_model_while_warning_uses_the_open_price_model_after_the_subscription():
+    from ipo.main import _warning_pre
+    from ipo.patterns import warning_level
+    pred = {"prob": {"p_down": 0.359, "threshold": 0.35, "warn": True}, "open_down": {"p_down": 0.213, "threshold": 0.25, "warn": False}}
+    patterns = [{"key": "x", "kind": "risk", "phase": "pre"}]
+    assert warning_level(pred, patterns) is None                 # after the subscription: the open-price judgment: no warning
+    assert _warning_pre(pred, patterns) == "strong"              # the earlier judgment: warns, and a pre pattern agrees
+    assert _warning_pre({"prob": {"warn": True}}, []) == "warn"
+    assert _warning_pre({"prob": {"warn": False}}, patterns) is None
+
+
+def test_warning_pre_is_none_without_a_pre_model_or_prediction():
+    from ipo.main import _warning_pre
+    assert _warning_pre(None, []) is None
+    assert _warning_pre({"open_down": {"warn": True}}, []) is None
