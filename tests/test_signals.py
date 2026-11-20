@@ -89,13 +89,19 @@ def test_ucast_severity_order_puts_the_below_band_order_flow_first():
     ucast = replace(NEXI, band_low=19000, final_price=19000, inst_competition=173.4, lockup_pct=0.57, below_band_pct=56.17, float_pct=36.81)
     sig = _by_key(ucast, 0.6)
     order = sorted((k for k in sig), key=lambda k: -(sig[k]["severity"] or 0))
-    assert order == ["below_band", "price_position", "lockup", "inst_competition", "mood", "float"]   # price position is a flat 1.0 when at the bottom
+    assert order == ["below_band", "lockup", "inst_competition", "mood", "float", "price_position"]   # fixed exactly at the bottom: severity 0, last
     assert round(sig["below_band"]["severity"], 2) == 1.81 and round(sig["lockup"]["severity"], 2) == 0.89
 
 
 def test_severity_of_price_position_and_missing_values():
-    assert _by_key(replace(NEXI, final_price=8000, band_low=10500))["price_position"]["severity"] == 1.0
-    assert _by_key(replace(NEXI, final_price=13000, band_low=10500))["price_position"]["severity"] == 0.0
+    assert _by_key(replace(NEXI, final_price=8000, band_low=10500))["price_position"]["severity"] == 0.2381     # (10500 - 8000) / 10500
+    assert _by_key(replace(NEXI, final_price=7000, band_low=9600))["price_position"]["severity"] == 0.2708
+    at_low = _by_key(replace(NEXI, final_price=19000, band_low=19000))["price_position"]
+    assert at_low["severity"] == 0.0 and at_low["flag"] is True       # exactly at the bottom: still a risk signal, no distance below it
+    above = _by_key(replace(NEXI, final_price=13000, band_low=10500))["price_position"]
+    assert above["severity"] == 0.0 and above["flag"] is False       # above the bottom
+    assert _by_key(replace(NEXI, final_price=None))["price_position"]["severity"] is None
+    assert _by_key(replace(NEXI, band_low=None))["price_position"]["severity"] is None
     sig = _by_key(OPTONICS, None)
     assert sig["below_band"]["severity"] is None and sig["float"]["severity"] is None and sig["mood"]["severity"] is None
     assert sig["below_band"]["rule"] == "20% 이상"            # the rule text is shown even when the value is unknown

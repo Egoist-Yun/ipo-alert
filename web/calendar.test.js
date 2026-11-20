@@ -653,7 +653,7 @@ test('splitSegments: a value is cut at " · " only; a value without it stays one
 // --- detail screen: verdict header, fact grid, signal table ---
 const sig = (key, label, value, flag, rule, severity) => ({ key, label, value, flag, rule, severity });
 const UCAST_SIGNALS = [
-  sig('price_position', '공모가 위치', 19000, true, '하단 이하', 1.0),
+  sig('price_position', '공모가 위치', 19000, true, '하단 이하', 0.0),
   sig('inst_competition', '기관 경쟁률', 173.4, true, '300대 1 미만', 0.42),
   sig('lockup', '의무보유확약', 0.57, true, '5% 미만', 0.886),
   sig('below_band', '하단 미만 신청', 56.17, true, '20% 이상', 1.81),
@@ -698,7 +698,7 @@ test('signalRows: without severity the original order of the risk rows is kept',
 });
 
 test('evidenceLine: the two most severe risk signals as short phrases (rounded like the mockup)', () => {
-  assert.equal(evidenceLine(UCAST), '기관 주문 56%⁠가 희망가 하단 아래, 공모가가 희망 하단에 확정');
+  assert.equal(evidenceLine(UCAST), '기관 주문 56%⁠가 희망가 하단 아래, 의무보유확약 0.6%');
   const one = { signals: [sig('inst_competition', '기관 경쟁률', 173.4, true, '300대 1 미만', 1.73), sig('lockup', '확약', 9, false, '5% 미만', 0.5)] };
   assert.equal(evidenceLine(one), '기관 경쟁률 173대 1');
   assert.equal(evidenceLine({ signals: [sig('lockup', '확약', 9, false, '5% 미만', 0.5)] }), '');
@@ -717,7 +717,7 @@ test('trustText: the past hit record as a sentence', () => {
 });
 
 test('verdictHeader: warning box, no-warning line, waiting, spac and listed stocks', () => {
-  assert.deepEqual(verdictHeader(UCAST), { kind: 'warn', title: '강한 하락 경고', why: '기관 주문 56%⁠가 희망가 하단 아래, 공모가가 희망 하단에 확정', trust: '과거 이 경고 10번 중 7번이 실제로 하락했어요', conflict: false, shift: null });
+  assert.deepEqual(verdictHeader(UCAST), { kind: 'warn', title: '강한 하락 경고', why: '기관 주문 56%⁠가 희망가 하단 아래, 의무보유확약 0.6%', trust: '과거 이 경고 10번 중 7번이 실제로 하락했어요', conflict: false, shift: null });
   const calm = verdictHeader({ ...UCAST, warning: null, signals: [sig('lockup', '확약', 9, false, '5% 미만', 0.5)], prediction: {} });
   assert.deepEqual(calm, { kind: 'ok', title: '하락 경고 없음', why: '', trust: null, conflict: false, shift: null });
   assert.equal(verdictHeader({ ...UCAST, warning: null, prediction: { conflict: true } }).conflict, true);
@@ -787,4 +787,13 @@ test('resultGrid: price, open and first close with changes, and the listing day'
   ]);
   assert.deepEqual(g.map(x => Object.keys(x).sort().join()), Array(4).fill('k,s,v'));   // plain: no colour flag for a fall
   assert.equal(resultGrid({ final_price: 10000, open_price: null, first_close: 9000 }).length, 2);   // no open price, no listing day: just two cells
+});
+
+test('signalRows: equal severities (0) keep the original order and the price position at the bottom sorts last among risks', () => {
+  const rows = signalRows({ signals: [
+    sig('price_position', 'A', 19000, true, '하단 이하', 0),
+    sig('float', 'B', 40, true, '35% 이상', 0),
+    sig('lockup', 'C', 0.5, true, '5% 미만', 0.9),
+  ] });
+  assert.deepEqual(rows.map(r => r.label), ['C', 'A', 'B']);
 });

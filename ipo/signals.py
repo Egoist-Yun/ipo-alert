@@ -36,7 +36,7 @@ def score(ipo: Ipo, mood: float | None) -> Ipo:
 
     signals = [
         {"key": "price_position", "label": "공모가 위치", "value": ipo.final_price, "flag": at_low,
-         "rule": "하단 이하", "severity": None if at_low is None else (1.0 if at_low else 0.0)},
+         "rule": "하단 이하", "severity": _below(ipo.band_low, ipo.final_price) if at_low is not None else None},
         _signal("inst_competition", "기관 경쟁률", ipo.inst_competition,
                 cmp(ipo.inst_competition, lambda v: v < config.MIN_INST_COMPETITION),
                 f"{_num(config.MIN_INST_COMPETITION)}대 1 미만", _below(config.MIN_INST_COMPETITION, ipo.inst_competition)),
