@@ -216,7 +216,7 @@ DETAIL_ANCHORS = ("시장구분", "공모청약일", "희망공모가액")
 
 def parse_detail(html: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
-    if all(_label_value(soup, label) is None for label in DETAIL_ANCHORS):
+    if not any(_label_value(soup, label) for label in DETAIL_ANCHORS):  # a label with an empty value is as good as missing
         raise ParseError(f"detail page has none of its anchor labels ({', '.join(DETAIL_ANCHORS)}) - layout changed?")
     band = re.findall(r"\d[\d,]*", _label_value(soup, "희망공모가액") or "")
     sub_start, sub_end = _full_range(_label_value(soup, "공모청약일"))

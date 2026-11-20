@@ -71,7 +71,7 @@ def test_rows_raise_when_most_candidate_rows_are_dropped_silently():
     rows = [_listing_row(1, "2026/10/22")] + [_listing_row(n, "날짜없음") for n in range(2, 11)]   # 10 data-shaped rows, 1 adopted
     with pytest.raises(ParseError) as e:
         parse_listing("<table>" + "".join(rows) + "</table>")
-    assert "10" in str(e.value) and "1" in str(e.value)               # candidate and adopted counts are in the message
+    assert "only 1 of 10" in str(e.value)                              # adopted and candidate counts, exactly
 
 
 def test_rows_accept_exactly_half_and_ignore_one_cell_link_rows():
@@ -85,3 +85,31 @@ def test_real_fixture_pages_pass_the_row_loss_check():
     from tests.helpers import load
     assert len(parse_schedule(load("schedule"))) == 30
     assert len(parse_demand(load("demand"))) == 20 and len(parse_listing(load("listing"))) == 20
+
+
+def _listing_page(good, bad):
+    rows = [_listing_row(n, "2026/10/22") for n in range(good)] + [_listing_row(100 + n, "날짜없음") for n in range(bad)]
+    return "<table>" + "".join(rows) + "</table>"
+
+
+def test_row_loss_boundary_around_one_half():
+    with pytest.raises(ParseError):
+        parse_listing(_listing_page(3, 4))                      # 3 of 7: below half
+    assert len(parse_listing(_listing_page(4, 3))) == 4          # 4 of 7: kept
+    with pytest.raises(ParseError):
+        parse_listing(_listing_page(4, 6))                      # 4 of 10: below half
+
+
+def _wide_row(no, date, cols):
+    cells = [f'<td><a href="./?o=v&no={no}">종목{no}</a></td>', f"<td>{date}</td>"] + ["<td>1</td>"] * (cols - 2)
+    return "<tr>" + "".join(cells) + "</tr>"
+
+
+def test_schedule_and_demand_also_raise_on_row_loss():
+    sched = "<table>" + _wide_row(1, "2026.10.22 ~ 2026.10.23", 6) + "".join(_wide_row(10 + n, "날짜없음", 6) for n in range(9)) + "</table>"
+    demand = "<table>" + _wide_row(1, "2026.10.22", 6) + "".join(_wide_row(10 + n, "날짜없음", 6) for n in range(9)) + "</table>"
+    with pytest.raises(ParseError) as e1:
+        parse_schedule(sched)
+    with pytest.raises(ParseError) as e2:
+        parse_demand(demand)
+    assert "only 1 of 10" in str(e1.value) and "only 1 of 10" in str(e2.value)

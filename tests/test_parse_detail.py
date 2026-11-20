@@ -36,6 +36,13 @@ def test_detail_without_any_anchor_label_is_a_parse_error_naming_the_labels():
             assert label in str(e.value)
 
 
+def test_detail_whose_anchor_labels_have_empty_values_is_a_parse_error():
+    page = ("<html><body><table><tr><td>시장구분</td><td></td></tr><tr><td>공모청약일</td><td> </td></tr>"
+            "<tr><td>희망공모가액</td><td></td></tr></table></body></html>")
+    with pytest.raises(ParseError):
+        parse_detail(page)
+
+
 def test_detail_with_only_one_anchor_label_is_accepted_and_the_rest_is_none():
     for label in ("시장구분", "공모청약일", "희망공모가액"):
         d = parse_detail(f"<html><body><table><tr><td>{label}</td><td>-</td></tr></table></body></html>")
@@ -146,7 +153,7 @@ def test_detail_retail_shares_range_in_a_plain_cell():
 def _demand_page(*rows, band="19,000 ~ 23,000 원", float_row=None):
     """A minimal page: the band, a demand table with the given label rows, optionally a float table whose last row is float_row."""
     body = "".join(f"<tr><td>{label}</td><td>432</td><td>58,445,000</td><td>{pct}</td></tr>" for label, pct in rows)
-    page = f"<html><body><table><tr><td>희망공모가액</td><td>{band}</td></tr></table><table>{body}</table>"
+    page = f"<html><body><table><tr><td>시장구분</td><td>코스닥</td></tr><tr><td>희망공모가액</td><td>{band}</td></tr></table><table>{body}</table>"
     if float_row:
         page += f"<table><tr><td>구분</td><td>유통가능</td></tr><tr><td>{float_row}</td><td>5,064,910</td><td>100.00%</td><td>63.19%</td><td>36.81%</td><td>-</td></tr></table>"
     return page + "</body></html>"
