@@ -4,8 +4,28 @@ from ipo import config
 from ipo.models import Ipo
 
 
-def _signal(key, label, value, flag):
-    return {"key": key, "label": label, "value": value, "flag": None if value is None else flag}
+BIG_SEVERITY = 999.0  # a zero value against a "below" rule: the most severe, not a division error
+
+
+def _num(x) -> str:
+    return f"{x:g}"
+
+
+def _at_least(threshold: float, value):
+    """severity of an 'at least' rule: how many times the threshold the value is."""
+    return None if value is None else round(value / threshold, 4)
+
+
+def _below(threshold: float, value):
+    """severity of a 'below' rule: how many times the threshold exceeds the value."""
+    if value is None:
+        return None
+    return BIG_SEVERITY if value <= 0 else round(min(threshold / value, BIG_SEVERITY), 4)
+
+
+def _signal(key, label, value, flag, rule, severity):
+    return {"key": key, "label": label, "value": value, "flag": None if value is None else flag,
+            "rule": rule, "severity": severity}
 
 
 def score(ipo: Ipo, mood: float | None) -> Ipo:
@@ -20,17 +40,24 @@ def score(ipo: Ipo, mood: float | None) -> Ipo:
         return None if value is None else fn(value)
 
     signals = [
-        {"key": "price_position", "label": "공모가 위치", "value": ipo.final_price, "flag": at_low},
+        {"key": "price_position", "label": "공모가 위치", "value": ipo.final_price, "flag": at_low,
+         "rule": "하단 이하", "severity": None if at_low is None else (1.0 if at_low else 0.0)},
         _signal("inst_competition", "기관 경쟁률", ipo.inst_competition,
-                cmp(ipo.inst_competition, lambda v: v < config.MIN_INST_COMPETITION)),
+                cmp(ipo.inst_competition, lambda v: v < config.MIN_INST_COMPETITION),
+                f"{_num(config.MIN_INST_COMPETITION)}대 1 미만", _below(config.MIN_INST_COMPETITION, ipo.inst_competition)),
         _signal("lockup", "의무보유확약", ipo.lockup_pct,
-                cmp(ipo.lockup_pct, lambda v: v < config.MIN_LOCKUP_PCT)),
+                cmp(ipo.lockup_pct, lambda v: v < config.MIN_LOCKUP_PCT),
+                f"{_num(config.MIN_LOCKUP_PCT)}% 미만", _below(config.MIN_LOCKUP_PCT, ipo.lockup_pct)),
         _signal("below_band", "하단 미만 신청", ipo.below_band_pct,
-                cmp(ipo.below_band_pct, lambda v: v >= config.MAX_BELOW_BAND_PCT)),
+                cmp(ipo.below_band_pct, lambda v: v >= config.MAX_BELOW_BAND_PCT),
+                f"{_num(config.MAX_BELOW_BAND_PCT)}% 이상", _at_least(config.MAX_BELOW_BAND_PCT, ipo.below_band_pct)),
         _signal("float", "유통가능물량", ipo.float_pct,
-                cmp(ipo.float_pct, lambda v: v >= config.MAX_FLOAT_PCT)),
+                cmp(ipo.float_pct, lambda v: v >= config.MAX_FLOAT_PCT),
+                f"{_num(config.MAX_FLOAT_PCT)}% 이상", _at_least(config.MAX_FLOAT_PCT, ipo.float_pct)),
         _signal("mood", "최근 시장 분위기", mood,
-                cmp(mood, lambda v: v >= config.MOOD_BAD_RATIO)),
+                cmp(mood, lambda v: v >= config.MOOD_BAD_RATIO),
+                f"{round(config.MOOD_BAD_RATIO * config.MOOD_WINDOW)}/{config.MOOD_WINDOW} 이상",
+                _at_least(config.MOOD_BAD_RATIO, mood)),
     ]
     return replace(
         ipo,
