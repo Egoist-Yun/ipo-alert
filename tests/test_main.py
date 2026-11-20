@@ -3,7 +3,7 @@ from datetime import datetime
 
 from ipo.config import KST
 from ipo.main import run
-from tests.helpers import load
+from tests.helpers import BARE_DETAIL, load
 
 NOW = datetime(2026, 11, 17, 18, 0, tzinfo=KST)
 PAGES = {
@@ -19,7 +19,7 @@ def fake_fetch(url):
     for key, html in PAGES.items():
         if key in url:
             return html
-    return "<html><body></body></html>"
+    return BARE_DETAIL
 
 
 class Rec:

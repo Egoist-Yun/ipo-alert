@@ -1,5 +1,7 @@
-from ipo.parse import parse_detail
-from tests.helpers import load
+import pytest
+
+from ipo.parse import ParseError, parse_detail
+from tests.helpers import BARE_DETAIL, load
 
 
 def test_detail_nexi():
@@ -23,8 +25,30 @@ def test_detail_other_float_table_layout():
     assert d["lockup_pct"] == 0.57
 
 
+BARE = BARE_DETAIL  # a recognisable detail page (anchor label present) with nothing else on it
+
+
+def test_detail_without_any_anchor_label_is_a_parse_error_naming_the_labels():
+    for html in ("", "<html></html>", "<html><body>종목명 X</body></html>", "<html><body><table><tr><td>업종</td><td>x</td></tr></table></body></html>"):
+        with pytest.raises(ParseError) as e:
+            parse_detail(html)
+        for label in ("시장구분", "공모청약일", "희망공모가액"):
+            assert label in str(e.value)
+
+
+def test_detail_with_only_one_anchor_label_is_accepted_and_the_rest_is_none():
+    for label in ("시장구분", "공모청약일", "희망공모가액"):
+        d = parse_detail(f"<html><body><table><tr><td>{label}</td><td>-</td></tr></table></body></html>")
+        assert d["final_price"] is None and d["brokers"] == []
+
+
+def test_detail_real_fixtures_pass_the_anchor_check():
+    for name in ("detail_2336", "detail_2352"):
+        assert parse_detail(load(name))["market"] == "코스닥"
+
+
 def test_detail_missing_sections_are_none():
-    d = parse_detail("<html><body>종목명 X</body></html>")
+    d = parse_detail(BARE)
     assert d["below_band_pct"] is None and d["float_pct"] is None
     assert d["market"] is None and d["final_price"] is None
 
@@ -38,13 +62,13 @@ def test_detail_financials_and_offering_nexi():
 
 
 def test_detail_new_fields_missing_are_none():
-    d = parse_detail("<html><body>종목명 X</body></html>")
+    d = parse_detail(BARE)
     for key in ("revenue_mil", "net_income_mil", "capital_mil", "par_value", "old_share_pct", "inst_count"):
         assert d[key] is None
 
 
 def test_detail_old_share_from_secondary_offering_text():
-    html = ("<html><body><table><tr><td>상장공모</td><td>신주모집 : 800,000 주 (80%) / 구주매출 : 200,000 주 (20%)</td>"
+    html = ("<html><body><table><tr><td>공모청약일</td><td>-</td></tr></table><table><tr><td>상장공모</td><td>신주모집 : 800,000 주 (80%) / 구주매출 : 200,000 주 (20%)</td>"
             "</tr></table></body></html>")
     assert parse_detail(html)["old_share_pct"] == 20.0
 
@@ -78,21 +102,21 @@ def test_detail_subscription_facts_nexi_has_no_broker_table():
 
 
 def test_detail_subscription_facts_missing_are_none_or_empty():
-    d = parse_detail("<html><body>종목명 X</body></html>")
+    d = parse_detail(BARE)
     for key in ("total_shares", "retail_shares", "retail_deposit_pct", "refund_date", "demand_start", "demand_end"):
         assert d[key] is None, key
     assert d["brokers"] == []
 
 
 def test_detail_broker_limit_dash_means_no_limit_number():
-    html = ("<html><body><table><tr><td>인수회사</td><td>주식수</td><td>청약한도</td><td>기타</td></tr>"
+    html = ("<html><body><table><tr><td>공모청약일</td><td>-</td></tr></table><table><tr><td>인수회사</td><td>주식수</td><td>청약한도</td><td>기타</td></tr>"
             "<tr><td>가증권</td><td>10,000 주</td><td>-</td><td>인수</td></tr></table></body></html>")
     assert parse_detail(html)["brokers"] == [{"name": "가증권", "shares": 10000, "limit_text": "-", "limit_max": None}]
 
 
 def test_detail_retail_deposit_pct_when_the_retail_share_is_still_a_range():
     # before the offer is fixed the page shows 542,500~651,000 주 (25.0~30.0%) instead of one number
-    html = ("<html><body><table><tr><td>일반청약자</td><td>542,500~651,000 주 \xa0(25.0~30.0%)</td>"
+    html = ("<html><body><table><tr><td>공모청약일</td><td>-</td></tr></table><table><tr><td>일반청약자</td><td>542,500~651,000 주 \xa0(25.0~30.0%)</td>"
             "<td>청약증거금율 : 50%</td><td>청약 최고한도 : - 주</td></tr></table></body></html>")
     d = parse_detail(html)
     assert d["retail_deposit_pct"] == 50.0
@@ -102,7 +126,7 @@ def test_detail_retail_deposit_pct_when_the_retail_share_is_still_a_range():
 
 def test_detail_retail_deposit_pct_when_both_ends_of_the_range_carry_a_percent_sign():
     # the live page of an offer still being fixed: 550,000~660,000 주 (25.00%~30.00%)
-    html = ("<html><body><table><tr><td>일반청약자</td><td>550,000~660,000 주 \xa0(25.00%~30.00%)</td>"
+    html = ("<html><body><table><tr><td>공모청약일</td><td>-</td></tr></table><table><tr><td>일반청약자</td><td>550,000~660,000 주 \xa0(25.00%~30.00%)</td>"
             "<td>청약증거금율 : 50%</td></tr></table></body></html>")
     assert parse_detail(html)["retail_deposit_pct"] == 50.0
 
@@ -110,11 +134,11 @@ def test_detail_retail_deposit_pct_when_both_ends_of_the_range_carry_a_percent_s
 def test_detail_retail_shares_high_is_none_for_a_single_value_and_when_missing():
     assert parse_detail(load("detail_2352"))["retail_shares_high"] is None
     assert parse_detail(load("detail_2336"))["retail_shares_high"] is None
-    assert parse_detail("<html><body>종목명 X</body></html>")["retail_shares_high"] is None
+    assert parse_detail(BARE)["retail_shares_high"] is None
 
 
 def test_detail_retail_shares_range_in_a_plain_cell():
-    html = "<html><body><table><tr><td>일반청약자</td><td>500,000~600,000 주  (25.00%~30.00%)</td></tr></table></body></html>"
+    html = "<html><body><table><tr><td>공모청약일</td><td>-</td></tr></table><table><tr><td>일반청약자</td><td>500,000~600,000 주  (25.00%~30.00%)</td></tr></table></body></html>"
     d = parse_detail(html)
     assert (d["retail_shares"], d["retail_shares_high"]) == (500000, 600000)
 

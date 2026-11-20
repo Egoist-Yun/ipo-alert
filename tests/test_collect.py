@@ -2,7 +2,7 @@ from dataclasses import replace
 
 from ipo.collect import collect_current, market_mood
 from ipo.models import Ipo
-from tests.helpers import load
+from tests.helpers import BARE_DETAIL, load
 
 PAGES = {
     "https://www.38.co.kr/html/fund/index.htm?o=k": load("schedule"),
@@ -14,7 +14,7 @@ PAGES = {
 
 
 def fake_fetch(url):
-    return PAGES.get(url, "<html><body></body></html>")
+    return PAGES.get(url, BARE_DETAIL)
 
 
 def test_collect_merges_tables_by_no():
@@ -88,7 +88,7 @@ def test_apply_detail_adds_the_subscription_facts_and_keeps_old_values_when_miss
     assert ipo.refund_date == "2026-11-23" and (ipo.demand_start, ipo.demand_end) == ("2026-11-09", "2026-11-13")
     assert [b["name"] for b in ipo.brokers] == ["유진투자증권", "신영증권"]
     # a later page that lacks these values must not erase what was collected before
-    empty = parse_detail("<html><body>종목명 X</body></html>")
+    empty = parse_detail(BARE_DETAIL)
     apply_detail(ipo, empty)
     assert ipo.total_shares == 800000 and ipo.refund_date == "2026-11-23" and len(ipo.brokers) == 2
 
@@ -106,5 +106,15 @@ def test_apply_detail_keeps_retail_shares_high_when_the_page_has_no_retail_value
     from ipo.collect import apply_detail
     from ipo.parse import parse_detail
     ipo = Ipo(no=1, name="x", url="", retail_shares=542500, retail_shares_high=651000)
-    apply_detail(ipo, parse_detail("<html><body>종목명 X</body></html>"))
+    apply_detail(ipo, parse_detail(BARE_DETAIL))
     assert (ipo.retail_shares, ipo.retail_shares_high) == (542500, 651000)
+
+
+def test_collect_fails_loudly_when_a_detail_page_lost_its_layout_and_caches_nothing_for_it():
+    import pytest
+    from ipo.parse import ParseError
+    cache = {}
+    pages = {**PAGES, "https://www.38.co.kr/html/fund/?o=v&no=2352": "<html><body>점검 중입니다</body></html>"}
+    with pytest.raises(ParseError):
+        collect_current(fetch=lambda u: pages.get(u, BARE_DETAIL), cache=cache, today="2026-11-17")
+    assert 2352 not in cache          # an empty page must never be remembered as the stock's detail

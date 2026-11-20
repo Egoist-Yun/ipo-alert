@@ -35,20 +35,29 @@ def _no(tr) -> int | None:
     return None
 
 
+# A table page may legitimately contain a few rows that look like data but are not (headers, notes), so a small loss is
+# tolerated; losing more than half of the data-shaped rows means the layout changed (a date column moved, ...).
+MIN_ROW_KEEP_RATIO = 0.5
+
+
 def _rows(html: str, date_col: int, date_re: str, min_cols: int) -> list[list]:
     soup = BeautifulSoup(html, "html.parser")
     out = []
+    candidates = 0  # rows with a stock link that are shaped like data rows (enough cells); sidebar links are one-cell rows
     for tr in soup.find_all("tr"):
         if tr.find("table"):
             continue
         tds = tr.find_all("td")
         if len(tds) < min_cols or _no(tr) is None:
             continue
+        candidates += 1
         if not re.search(date_re, _text(tds[date_col])):
             continue
         out.append((tr, tds))
     if not out:
         raise ParseError("no rows found")
+    if len(out) < candidates * MIN_ROW_KEEP_RATIO:
+        raise ParseError(f"only {len(out)} of {candidates} data-shaped rows were usable (layout changed?)")
     return out
 
 
@@ -200,8 +209,15 @@ def _is_below_band_row(label: str, band_low: int | None) -> bool:
     return bool(m and band_low and int(m.group(1).replace(",", "")) == band_low)
 
 
+# Labels every real detail page has (checked on 900+ cached pages from 2015 on). If none is found the page layout changed (or the
+# page is not a detail page): fail loudly instead of returning an all-empty record that looks like valid data.
+DETAIL_ANCHORS = ("시장구분", "공모청약일", "희망공모가액")
+
+
 def parse_detail(html: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
+    if all(_label_value(soup, label) is None for label in DETAIL_ANCHORS):
+        raise ParseError(f"detail page has none of its anchor labels ({', '.join(DETAIL_ANCHORS)}) - layout changed?")
     band = re.findall(r"\d[\d,]*", _label_value(soup, "희망공모가액") or "")
     sub_start, sub_end = _full_range(_label_value(soup, "공모청약일"))
     demand_start, demand_end = _full_range(_label_value(soup, "수요예측일"))

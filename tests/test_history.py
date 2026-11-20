@@ -2,7 +2,7 @@ import json
 
 from ipo.history import build_history, load_history, save_history, signal_backtest, update_history
 from ipo.models import Ipo
-from tests.helpers import load
+from tests.helpers import BARE_DETAIL, load
 
 PAGES = {
     "o=nw": load("listing"),
@@ -15,7 +15,7 @@ def fake_fetch(url):
     for key, html in PAGES.items():
         if key in url:
             return html
-    return "<html><body></body></html>"
+    return BARE_DETAIL
 
 
 def test_build_history_fills_listing_and_detail():

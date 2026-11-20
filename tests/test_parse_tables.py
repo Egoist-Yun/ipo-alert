@@ -60,3 +60,28 @@ def test_short_row_is_a_parse_error_not_index_error():
     for fn in (parse_schedule, parse_demand, parse_listing):
         with pytest.raises(ParseError):
             fn(short)
+
+
+def _listing_row(no, date):
+    cells = [f'<td><a href="./?o=v&no={no}">종목{no}</a></td>', f"<td>{date}</td>"] + ["<td>1</td>"] * 7
+    return "<tr>" + "".join(cells) + "</tr>"
+
+
+def test_rows_raise_when_most_candidate_rows_are_dropped_silently():
+    rows = [_listing_row(1, "2026/10/22")] + [_listing_row(n, "날짜없음") for n in range(2, 11)]   # 10 data-shaped rows, 1 adopted
+    with pytest.raises(ParseError) as e:
+        parse_listing("<table>" + "".join(rows) + "</table>")
+    assert "10" in str(e.value) and "1" in str(e.value)               # candidate and adopted counts are in the message
+
+
+def test_rows_accept_exactly_half_and_ignore_one_cell_link_rows():
+    half = [_listing_row(n, "2026/10/22") for n in range(1, 6)] + [_listing_row(n, "날짜없음") for n in range(6, 11)]
+    assert len(parse_listing("<table>" + "".join(half) + "</table>")) == 5
+    sidebar = "".join(f'<tr><td><a href="./?o=v&no={n}">링크{n}</a></td></tr>' for n in range(100, 140))   # 40 navigation rows: not candidates
+    assert len(parse_listing("<table>" + _listing_row(1, "2026/10/22") + sidebar + "</table>")) == 1
+
+
+def test_real_fixture_pages_pass_the_row_loss_check():
+    from tests.helpers import load
+    assert len(parse_schedule(load("schedule"))) == 30
+    assert len(parse_demand(load("demand"))) == 20 and len(parse_listing(load("listing"))) == 20
