@@ -3,7 +3,7 @@ import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } 
 
 const $ = id => document.getElementById(id);
 const loadedAt = Date.now();
-const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null, ledger: null, routed: false, applied: new Set(), canApply: false, alarmOff: false, doneOpen: false, pastOpen: false, pastKey: '', push: { perm: null, token: null, changed: false, showText: false } };
+const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null, ledger: null, routed: false, applied: new Set(), canApply: false, alarmOff: false, doneOpen: false, pastOpen: false, pastKey: '', push: { perm: null } };
 
 function h(tag, props, ...kids) {
   const el = document.createElement(tag);
@@ -415,50 +415,17 @@ function renderRecord() {
 // App push (FCM): only in the Android app whose build has the plugin; an older APK and any browser do nothing here.
 const pusher = () => (isNativeApp(window) ? window.Capacitor?.Plugins?.PushNotifications : undefined);
 
-function lsGet(key) { try { return window.localStorage.getItem(key); } catch (e) { return null; } }
-function lsSet(key, value) { try { window.localStorage.setItem(key, value); } catch (e) { /* storage unavailable: the panel still works for this run */ } }
-function lsDel(key) { try { window.localStorage.removeItem(key); } catch (e) { /* ignore */ } }
-
 function pushPanelNodes() {
-  const view = pusher() ? pushPanelState(state.push.perm, state.push.token, state.push.changed) : null;
+  const view = pusher() ? pushPanelState(state.push.perm) : null;
   if (!view) return [];
-  const nodes = [h('h4', {}, '앱 알림'), h('p', { class: 'p' }, view.text)];
-  if (view.warn) nodes.push(h('p', { class: 'p' }, view.warn));
-  if (view.canCopy) {
-    nodes.push(h('button', { class: 'btn-medium', type: 'button', onclick: copyPushToken }, '토큰 복사'));
-    if (state.push.showText) nodes.push(h('p', { class: 'p token' }, state.push.token));
-  }
-  return [h('div', { class: 'panel' }, nodes)];
-}
-
-async function copyPushToken() {
-  try {
-    await navigator.clipboard.writeText(state.push.token);
-    showToast('토큰을 복사했어요');
-  } catch (e) {
-    state.push.showText = true;   // no clipboard access: show the token as selectable text instead
-  }
-  state.push.changed = false;
-  lsDel('fcmChanged');
-  renderRecord();
+  return [h('div', { class: 'panel' }, h('h4', {}, '앱 알림'), h('p', { class: 'p' }, view.text))];
 }
 
 async function initPush() {
   const PN = pusher();
   if (!PN) return;
   try {
-    state.push.token = lsGet('fcmToken');
-    state.push.changed = lsGet('fcmChanged') === '1';
-    PN.addListener('registration', t => {
-      const value = t && t.value;
-      if (!value) return;
-      const before = lsGet('fcmToken');
-      if (before && before !== value) { state.push.changed = true; lsSet('fcmChanged', '1'); }
-      lsSet('fcmToken', value);
-      state.push.token = value;
-      renderRecord();
-    });
-    PN.addListener('registrationError', () => { state.push.token = null; renderRecord(); });
+    PN.addListener('registrationError', e => console.error(e));
     PN.addListener('pushNotificationActionPerformed', ev => {
       const no = pushTargetNo(ev && ev.notification && ev.notification.data && ev.notification.data.url);
       if (no) location.hash = String(no);

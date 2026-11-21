@@ -904,13 +904,12 @@ test('showApplyButton: a withdrawn stock offers the button only to take the mark
   assert.equal(showApplyButton(S(2, 'y', { first_close: 5000 }), new Set([2])), false);
 });
 
-test('pushPanelState: three states, nothing before the permission is known, a changed token warns', () => {
-  assert.equal(pushPanelState(null, null, false), null);
-  assert.deepEqual(pushPanelState('denied', 'T', false), { status: 'off', text: '알림 권한이 꺼져 있어요', canCopy: false, warn: '' });
-  assert.deepEqual(pushPanelState('granted', null, false), { status: 'none', text: '토큰을 받지 못했어요', canCopy: false, warn: '' });
-  assert.deepEqual(pushPanelState('granted', 'T', false), { status: 'ready', text: '알림 토큰이 준비됐어요', canCopy: true, warn: '' });
-  assert.match(pushPanelState('granted', 'T', true).warn, /FCM_TOKEN/);
-  assert.equal(pushPanelState('denied', 'T', true).warn, '');           // no permission: the permission problem comes first
+test('pushPanelState: nothing before the permission is known; off tells where to turn it on; on says it is receiving', () => {
+  assert.equal(pushPanelState(null), null);
+  assert.equal(pushPanelState(undefined), null);
+  assert.deepEqual(pushPanelState('denied'), { status: 'off', text: '알림 권한이 꺼져 있어요. 휴대폰 설정에서 공모주 달력 알림을 켜 주세요' });
+  assert.equal(pushPanelState('prompt').status, 'off');
+  assert.deepEqual(pushPanelState('granted'), { status: 'on', text: '공모주 알림을 받고 있어요' });
 });
 
 test('pushTargetNo: the stock number after the # of the push link, else null', () => {

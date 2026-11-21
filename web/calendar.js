@@ -519,15 +519,13 @@ export function countBarsIn(bars, from, to) {
   return bars.filter(b => b.start <= to && b.end >= from).length;
 }
 
-// ---- App push notifications (FCM) ----
-// The panel on the record screen. perm: the plugin's `receive` permission ('granted', 'denied', 'prompt' ...) or null while not
-// asked yet (no panel); token: the device token or null; changed: the token differs from the one the user last had.
-export function pushPanelState(perm, token, changed) {
+// ---- App push notifications (FCM topic) ----
+// The panel on the record screen: only the notification permission matters (the app subscribes to the topic by itself).
+// perm: the plugin's `receive` permission ('granted', 'denied', 'prompt' ...) or null while not known yet (no panel).
+export function pushPanelState(perm) {
   if (perm == null) return null;
-  if (perm !== 'granted') return { status: 'off', text: '알림 권한이 꺼져 있어요', canCopy: false, warn: '' };
-  if (!token) return { status: 'none', text: '토큰을 받지 못했어요', canCopy: false, warn: '' };
-  return { status: 'ready', text: '알림 토큰이 준비됐어요', canCopy: true,
-    warn: changed ? '토큰이 바뀌었어요. GitHub 비밀값 FCM_TOKEN을 새 값으로 바꿔 주세요' : '' };
+  if (perm !== 'granted') return { status: 'off', text: '알림 권한이 꺼져 있어요. 휴대폰 설정에서 공모주 달력 알림을 켜 주세요' };
+  return { status: 'on', text: '공모주 알림을 받고 있어요' };
 }
 
 // The stock a push opens: the push carries the site link ".../#<no>" in data.url. Anything else: null.
