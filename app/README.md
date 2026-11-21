@@ -24,18 +24,21 @@
 ## 푸시 알림 설정 (FCM)
 수집기가 보내는 알림은 FCM 푸시(앱 이름 "공모주 달력"으로 도착)가 먼저이고, FCM이 실패할 때만 ntfy로 갑니다.
 1. Firebase 콘솔에서 프로젝트를 만들고 안드로이드 앱(패키지 `io.github.egoistyun.ipoalert`)을 추가한 뒤 `google-services.json`을 내려받습니다.
-2. 그 파일을 `app/android/app/google-services.json`(빌드용 복사본이면 `C:\ipo-app-buildndroidpp\`)에 둡니다.
-   이 파일은 `.gitignore`에 들어 있어 커밋되지 않습니다. 공개 저장소이므로 절대 올리지 마세요. 없으면 푸시 플러그인은 켜지지 않고 앱은 그대로 동작합니다.
+2. 그 파일을 `app/android/app/google-services.json`(빌드용 복사본이면 `C:\ipo-app-build\android\app\`)에 둡니다.
+   이 파일은 `.gitignore`에 들어 있어 커밋되지 않습니다. 공개 저장소이므로 절대 올리지 마세요.
+   **이 파일 없이 빌드하면 알림 권한을 허용할 때 앱이 종료됩니다**(푸시 플러그인의 네이티브 예외라 막을 수 없음). 로컬 빌드는 이 파일을 반드시 둡니다.
 3. Firebase 프로젝트 설정 > 서비스 계정에서 새 비공개 키(JSON)를 만듭니다.
-4. GitHub 저장소 Settings > Secrets and variables > Actions에 비밀값 2개를 만듭니다.
+4. GitHub 저장소 Settings > Secrets and variables > Actions에 비밀값 3개를 만듭니다.
    - `FCM_SERVICE_ACCOUNT`: 3번 JSON 파일의 내용 전체(텍스트 그대로)
    - `FCM_TOKEN`: 앱 설치 뒤 아래 방법으로 복사한 기기 토큰
+   - `GOOGLE_SERVICES_JSON`: 1번 `google-services.json`의 내용 전체. CI가 APK를 빌드할 때 필요하고, 없으면 빌드가 실패합니다.
 5. APK를 새로 빌드해서 설치합니다. 푸시 플러그인이 들어간 APK부터 앱 알림이 동작합니다.
 6. 앱의 실전 성적 화면 > "앱 알림"에서 "토큰 복사"를 눌러 `FCM_TOKEN`에 붙여 넣습니다.
 7. Actions 탭에서 `test-push`를 실행하면 "공모주 테스트 알림"이 도착합니다.
 
 **토큰 갱신:** 앱을 지웠다 다시 설치하거나 데이터를 지우면 토큰이 바뀝니다. 앱이 "토큰이 바뀌었어요" 안내를 띄우거나 ntfy로
 "앱 알림 토큰이 무효예요"가 오면, 6번처럼 새 토큰을 복사해 `FCM_TOKEN` 비밀값만 바꿉니다.
+`NTFY_TOPIC` 없이 FCM만 쓰면 토큰 무효나 설정 오류를 폰으로 알려 줄 길이 없어 Actions 로그에만 남습니다.
 값(토큰, 서비스 계정, ntfy 토픽)은 이 문서나 저장소에 적지 않습니다.
 
 ## 증권사 목록을 바꿀 때

@@ -5,7 +5,9 @@ import requests
 
 SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
 CHANNEL_ID = "ipo-alerts"
-_INVALID = {"UNREGISTERED", "INVALID_ARGUMENT"}
+_FCM_ERROR = "type.googleapis.com/google.firebase.fcm.v1.FcmError"
+_BAD_REQUEST = "type.googleapis.com/google.rpc.BadRequest"
+TOKEN_REFRESH_TIMEOUT = 15  # google-auth waits 120 s by default; a stuck token request must not block every send
 _credentials: dict = {}  # service account e-mail -> google credentials, reused inside one process
 
 
@@ -31,15 +33,28 @@ def _access_token(sa_info: dict) -> str:
         creds = service_account.Credentials.from_service_account_info(sa_info, scopes=[SCOPE])
         _credentials[key] = creds
     if not creds.valid:
-        creds.refresh(Request())
+        req = Request()
+        creds.refresh(lambda *a, **k: req(*a, **{**k, "timeout": TOKEN_REFRESH_TIMEOUT}))
     return creds.token
 
 
-def _error_status(resp) -> str:
+def _error_info(resp) -> tuple[str, str, bool]:
+    """(status, FCM errorCode, token is dead) from an FCM v1 error body. Only an FcmError UNREGISTERED or a BadRequest
+    violation on the token field means the device token is bad; a bare 404 / INVALID_ARGUMENT can be a wrong project id or payload."""
     try:
-        return str((resp.json().get("error") or {}).get("status") or "")
+        err = resp.json().get("error") or {}
+        status = str(err.get("status") or "")
+        error_code, dead = "", False
+        for d in err.get("details") or []:
+            kind = d.get("@type")
+            if kind == _FCM_ERROR:
+                error_code = str(d.get("errorCode") or "")
+                dead = dead or error_code == "UNREGISTERED"
+            elif kind == _BAD_REQUEST:
+                dead = dead or any("token" in str(v.get("field") or "") for v in d.get("fieldViolations") or [])
+        return status, error_code, dead
     except Exception:
-        return ""
+        return "", "", False
 
 
 def fcm_send(payload: dict, token: str, sa_info: dict, post=requests.post, access_token: str | None = None) -> None:
@@ -49,10 +64,9 @@ def fcm_send(payload: dict, token: str, sa_info: dict, post=requests.post, acces
     code = resp.status_code
     if code < 400:
         return
-    status = _error_status(resp)
-    if code == 404 or status in _INVALID:
-        raise InvalidToken(f"FCM {code} {status}".strip())
-    raise RuntimeError(f"FCM {code} {status}".strip())
+    status, error_code, dead = _error_info(resp)
+    text = f"FCM {code} {status} {error_code}".strip()
+    raise (InvalidToken if dead else RuntimeError)(text)
 
 
 def main(argv: list[str] | None = None, env=None, post=requests.post) -> int:

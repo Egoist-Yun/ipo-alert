@@ -51,6 +51,18 @@ jobs:
       - run: npm ci
         working-directory: app
 
+      # The push plugin crashes the app (an uncatchable native exception) when the build has no google-services.json,
+      # so a build without it must fail instead of publishing an APK that dies once notifications are allowed.
+      - name: Firebase config
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "::error::Secret GOOGLE_SERVICES_JSON is not set: an APK without google-services.json crashes when notifications are allowed."
+            exit 1
+          fi
+          printf '%s' "$GOOGLE_SERVICES_JSON" > app/android/app/google-services.json
+
       - run: npx cap sync android
         working-directory: app
 

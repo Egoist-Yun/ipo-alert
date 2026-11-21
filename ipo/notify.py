@@ -166,14 +166,17 @@ def send(payload: dict, target: Target, post=requests.post) -> None:
             fcm_send(payload, target.fcm_token, target.fcm_sa)
             return
         except Exception as e:
-            traceback.print_exc()
+            print(f"FCM failed: {type(e).__name__}: {e}")   # no traceback: a library error body must not land in a public log
             if not target.topic:
                 raise
             _ntfy(payload, target.topic, post)
             if isinstance(e, InvalidToken) and not target.notes.get("token_notice"):
                 target.notes["token_notice"] = True
-                _ntfy({"title": "앱 알림 토큰이 무효예요",
-                       "message": "앱의 실전 성적 화면에서 새 토큰을 복사해 GitHub 비밀값 FCM_TOKEN을 바꿔 주세요"}, target.topic, post)
+                try:                                          # the alert itself is delivered: a failed notice must not make the caller resend it
+                    _ntfy({"title": "앱 알림 토큰이 무효예요",
+                           "message": "앱의 실전 성적 화면에서 새 토큰을 복사해 GitHub 비밀값 FCM_TOKEN을 바꿔 주세요"}, target.topic, post)
+                except Exception as e2:
+                    print(f"token notice failed: {type(e2).__name__}")
             return
     _ntfy(payload, target.topic, post)
 

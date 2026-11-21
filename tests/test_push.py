@@ -13,8 +13,16 @@ SA = {"project_id": "proj", "client_email": "x@proj.iam.gserviceaccount.com", "p
 PAYLOAD = {"title": "제목", "message": "내용", "click": "https://s/#2352"}
 
 
-def resp(code, status=None):
-    return SimpleNamespace(status_code=code, json=lambda: {"error": {"status": status}} if status else {})
+def resp(code, status=None, details=None):
+    err = {"status": status, **({"details": details} if details is not None else {})}
+    return SimpleNamespace(status_code=code, json=lambda: {"error": err} if status or details else {})
+
+
+UNREGISTERED = [{"@type": "type.googleapis.com/google.firebase.fcm.v1.FcmError", "errorCode": "UNREGISTERED"}]
+BAD_TOKEN_FIELD = [{"@type": "type.googleapis.com/google.rpc.BadRequest",
+                    "fieldViolations": [{"field": "message.token", "description": "invalid"}]}]
+BAD_OTHER_FIELD = [{"@type": "type.googleapis.com/google.rpc.BadRequest",
+                    "fieldViolations": [{"field": "message.android.notification.channel_id", "description": "invalid"}]}]
 
 
 def test_fcm_message_has_the_agreed_shape_and_cuts_the_body():
@@ -37,13 +45,26 @@ def test_fcm_send_posts_to_the_project_url_with_the_bearer_token():
     assert seen["json"]["message"]["token"] == "TOK"
 
 
-@pytest.mark.parametrize("code,status,exc", [(404, None, InvalidToken), (404, "UNREGISTERED", InvalidToken),
-                                              (400, "INVALID_ARGUMENT", InvalidToken), (500, "INTERNAL", RuntimeError),
-                                              (401, "UNAUTHENTICATED", RuntimeError)])
-def test_fcm_send_tells_a_dead_token_from_other_failures(code, status, exc):
+@pytest.mark.parametrize("code,status,details,exc", [
+    (404, "NOT_FOUND", UNREGISTERED, InvalidToken),                 # FcmError UNREGISTERED
+    (400, "INVALID_ARGUMENT", BAD_TOKEN_FIELD, InvalidToken),       # the violation is on the token field
+    (400, "INVALID_ARGUMENT", None, RuntimeError),                  # a bare INVALID_ARGUMENT can be a wrong payload
+    (400, "INVALID_ARGUMENT", BAD_OTHER_FIELD, RuntimeError),
+    (404, None, None, RuntimeError),                                 # a bare 404 can be a wrong project id
+    (404, "NOT_FOUND", None, RuntimeError),
+    (500, "INTERNAL", None, RuntimeError),
+    (401, "UNAUTHENTICATED", None, RuntimeError)])
+def test_fcm_send_tells_a_dead_token_from_other_failures(code, status, details, exc):
     with pytest.raises(exc) as e:
-        fcm_send(PAYLOAD, "SECRET-TOKEN", SA, post=lambda *a, **k: resp(code, status), access_token="AT")
-    assert type(e.value) is exc and "SECRET-TOKEN" not in str(e.value) and "AT" not in str(e.value).split()
+        fcm_send(PAYLOAD, "SECRET-TOKEN", SA, post=lambda *a, **k: resp(code, status, details), access_token="AT")
+    assert type(e.value) is exc and "SECRET-TOKEN" not in str(e.value)
+    assert str(e.value).startswith(f"FCM {code}")
+
+
+def test_the_error_text_carries_only_code_status_and_error_code():
+    with pytest.raises(InvalidToken) as e:
+        fcm_send(PAYLOAD, "T", SA, post=lambda *a, **k: resp(404, "NOT_FOUND", UNREGISTERED), access_token="AT")
+    assert str(e.value) == "FCM 404 NOT_FOUND UNREGISTERED"
 
 
 class Calls:
@@ -148,3 +169,36 @@ def test_the_cli_sends_one_alert_and_does_nothing_without_a_target(calls, capsys
     assert calls.ntfy == [{"title": "제목", "message": "내용", "topic": "nt"}]
     assert push_main(["제목", "내용"], env={}, post=calls.post) == 0 and len(calls.ntfy) == 1
     assert push_main(["only-one"], env={}, post=calls.post) == 2
+
+
+def test_a_failing_token_notice_does_not_make_send_fail_and_the_alert_goes_out_once(calls, capsys):
+    calls.fcm_exc = InvalidToken("FCM 404")
+    sent = []
+
+    def post(url, json, timeout):
+        sent.append(json["title"])
+        if json["title"].startswith("앱 알림"):
+            raise ConnectionError("ntfy down")
+    send(PAYLOAD, Target(**FCM_TARGET), post=post)                              # no exception
+    assert sent == ["제목", "앱 알림 토큰이 무효예요"]
+    assert "ConnectionError" in capsys.readouterr().out
+
+
+def test_each_target_announces_a_dead_token_once_it_is_not_a_global_flag(calls):
+    calls.fcm_exc = InvalidToken("FCM 404")
+    for _ in range(2):
+        send(PAYLOAD, Target(**FCM_TARGET), post=calls.post)
+    assert [n["title"] for n in calls.ntfy].count("앱 알림 토큰이 무효예요") == 2
+
+
+def test_the_fcm_failure_log_is_one_short_line_without_a_traceback(calls, capsys):
+    calls.fcm_exc = RuntimeError("FCM 500 INTERNAL")
+    send(PAYLOAD, Target(**FCM_TARGET), post=calls.post)
+    out = capsys.readouterr()
+    assert "FCM failed: RuntimeError: FCM 500 INTERNAL" in out.out and "Traceback" not in out.out + out.err
+
+
+def test_the_cli_returns_1_when_the_send_fails_so_the_workflow_can_fall_back(calls):
+    def boom(url, json, timeout):
+        raise ConnectionError("down")
+    assert push_main(["제목", "내용"], env={"NTFY_TOPIC": "nt"}, post=boom) == 1
