@@ -179,14 +179,14 @@ export function toggleApplied(set, no) {
   return next;
 }
 
-// Local alarm for each stock the user marked as applied: 08:30 KST on its listing day (pre-market orders open then).
-// Pure: the app schedules exactly this list and cancels anything else it had scheduled.
 // Whether the detail screen offers the apply/unapply button: not for a listed stock; a withdrawn stock only to take the mark off.
 export function showApplyButton(ipo, applied) {
   if (ipo.first_close != null) return false;
   return !ipo.withdrawn || applied.has(ipo.no);
 }
 
+// Local alarm for each stock the user marked as applied: 08:30 KST on its listing day (pre-market orders open then).
+// Pure: the app schedules exactly this list and cancels anything else it had scheduled.
 export function listingAlarms(ipos, applied, nowIso) {
   const now = Date.parse(nowIso);
   if (Number.isNaN(now)) return [];

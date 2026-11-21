@@ -113,20 +113,31 @@ def _previous_ipos(data_dir: Path, failures: list) -> list[Ipo]:
     return out
 
 
-def _carry_withdrawn(previous: list[Ipo], current: list[Ipo], now_kst: datetime, fetch, failures: list) -> list[Ipo]:
+def _carry_withdrawn(previous: list[Ipo], current: list[Ipo], history: list, now_kst: datetime, fetch, failures: list) -> list[Ipo]:
     """A stock that was on the calendar but is in no list any more (and has not listed, listing day not past) is either
     called off - its detail page answers "no such information" - or something else went wrong. Called off: it stays on the
     calendar marked `withdrawn` (checked once, then carried without asking again). Anything not confirmed is reported in
     `failures` and the stock is kept as it was, to be checked again next run. More than MAX_VANISHED unchecked stocks gone
-    at once looks like a site problem, not many withdrawals: none is opened."""
+    at once looks like a site problem, not many withdrawals: none is opened. A stock already marked withdrawn only follows the
+    calendar cutoff. A stock not confirmed whose listing day has passed is not opened either: the history decides (listed:
+    it keeps the result; no result there: reported once and dropped)."""
     today = now_kst.date().isoformat()
     cutoff = (now_kst.date() - timedelta(days=CALENDAR_DAYS_BACK)).isoformat()
     here = {i.no for i in current}
-    gone = [old for old in previous
-            if old.no not in here and old.first_close is None and not (old.listing_date and old.listing_date < today)]
+    away = [old for old in previous if old.no not in here and old.first_close is None]
+    passed = lambda old: bool(old.listing_date and old.listing_date < today)
+    late = [old for old in away if not old.withdrawn and passed(old)]
+    gone = [old for old in away if old.withdrawn or not passed(old)]
     unchecked = [old for old in gone if not old.withdrawn]
     mass = len(unchecked) > MAX_VANISHED
+    listed = {h.no: h for h in history if h.first_close is not None}
     carried = []
+    for old in late:
+        h = listed.get(old.no)
+        if h is None:
+            failures.append({"no": old.no, "name": old.name, "error": "상장일이 지났는데 결과 없음"})
+        elif old.sub_start and old.sub_start >= cutoff:
+            carried.append(replace(old, first_close=h.first_close, open_price=h.open_price))
     for old in gone:
         if not old.withdrawn:
             if mass:
@@ -253,8 +264,10 @@ def run(data_dir: Path, topic: str | None, site_url: str, now_kst: datetime,
         ledger_errors: list = []
         previous = _previous_ipos(data_dir, raw_failures)  # read before anything is overwritten
         ipos = _build(data_dir, now_kst, fetch, raw_failures)
-        ipos = sorted(ipos + _carry_withdrawn(previous, ipos, now_kst, fetch, raw_failures), key=lambda i: (i.sub_start or "", i.no))
-        failures = list({f["no"]: f for f in raw_failures}.values())  # a stock can fail in both the history and the current pass
+        history_path = data_dir / "history.json"
+        history = load_history(history_path) if history_path.exists() else []   # saved by _build just above
+        ipos = sorted(ipos + _carry_withdrawn(previous, ipos, history, now_kst, fetch, raw_failures), key=lambda i: (i.sub_start or "", i.no))
+        failures = list({(f["no"], f["name"]): f for f in raw_failures}.values())  # a stock can fail in both the history and the current pass
         payload = {"updated_at": now_kst.isoformat(), "disclaimer": config.DISCLAIMER,
                    "ledger": _update_ledger(data_dir, ipos, now_kst, ledger_errors), "ipos": [asdict(i) for i in ipos]}
         if failures:

@@ -225,3 +225,75 @@ def test_a_withdrawn_stock_gets_no_result_eve_or_pre_alert():
     live = _stock(inst_competition=300.0, sub_start="2026-11-23", sub_end="2026-11-24")
     assert due_alerts([live], {"sent": []}, now)                                   # a normal stock does get one
     assert due_alerts([_stock(inst_competition=300.0, sub_start="2026-11-23", sub_end="2026-11-24", withdrawn="2026-11-21")], {"sent": []}, now) == []
+
+
+LATE = {**PREV, "listing_date": "2026-11-10", "sub_start": "2026-11-03", "sub_end": "2026-11-04"}   # NOW is 2026-11-17
+
+
+def _seed_history(tmp_path, *nos):
+    from ipo.history import save_history
+    save_history(tmp_path / "history.json", [Ipo(no=n, name=f"h{n}", url="", listing_date="2026-11-10", final_price=10000,
+                                                  open_price=12000, first_close=13000) for n in nos])
+
+
+def test_a_kept_stock_whose_listing_day_passed_takes_its_result_from_the_history(tmp_path):
+    (tmp_path / "ipos.json").write_text(json.dumps({"ipos": [LATE]}), "utf-8")
+    _seed_history(tmp_path, 9001)
+    seen = []
+    assert run(tmp_path, None, "", NOW, fetch=_fetch(GONE, seen), post=Rec()) == 0
+    data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
+    kept = {i["no"]: i for i in data["ipos"]}[9001]
+    assert (kept["first_close"], kept["open_price"], kept["withdrawn"]) == (13000, 12000, None)
+    assert seen == [] and not [f for f in data.get("detail_failures", []) if f["no"] == 9001]
+
+
+def test_a_kept_stock_whose_listing_day_passed_without_any_result_is_reported_once_and_dropped(tmp_path):
+    (tmp_path / "ipos.json").write_text(json.dumps({"ipos": [LATE]}), "utf-8")
+    for n in range(2):
+        run(tmp_path, None, "", NOW, fetch=_fetch(GONE), post=Rec())
+        data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
+        assert 9001 not in {i["no"] for i in data["ipos"]}
+        errs = [f["error"] for f in data.get("detail_failures", []) if f["no"] == 9001]
+        assert errs == (["상장일이 지났는데 결과 없음"] if n == 0 else [])
+
+
+def test_a_withdrawn_stock_stays_after_its_planned_listing_day_while_inside_the_cutoff(tmp_path):
+    (tmp_path / "ipos.json").write_text(json.dumps({"ipos": [{**LATE, "withdrawn": "2026-11-05"}]}), "utf-8")
+    seen = []
+    run(tmp_path, None, "", NOW, fetch=_fetch(GONE, seen), post=Rec())
+    assert _ipos(tmp_path)[9001]["withdrawn"] == "2026-11-05" and seen == []
+
+
+def _opened(tmp_path, rows):
+    (tmp_path / "ipos.json").write_text(json.dumps({"ipos": rows}), "utf-8")
+    seen = []
+
+    def fetch(url):
+        for r in rows:
+            if url.endswith(f"no={r['no']}"):
+                seen.append(r["no"])
+                return GONE
+        return fake_fetch(url)
+    run(tmp_path, None, "", NOW, fetch=fetch, post=Rec())
+    return seen
+
+
+def test_already_withdrawn_stocks_do_not_count_toward_the_mass_limit(tmp_path):
+    done = [{**PREV, "no": 9100 + k, "withdrawn": "2026-11-10"} for k in range(3)]
+    new = [{**PREV, "no": 9200 + k} for k in range(2)]
+    assert sorted(_opened(tmp_path, done + new)) == [9200, 9201]
+    assert all(_ipos(tmp_path)[n]["withdrawn"] == "2026-11-17" for n in (9200, 9201))
+
+
+def test_late_stocks_do_not_count_toward_the_mass_limit(tmp_path):
+    late = [{**LATE, "no": 9300 + k} for k in range(4)]
+    new = {**PREV, "no": 9400}
+    assert _opened(tmp_path, late + [new]) == [9400]
+    assert _ipos(tmp_path)[9400]["withdrawn"] == "2026-11-17"
+
+
+def test_failures_with_no_zero_and_different_names_are_not_merged(tmp_path):
+    (tmp_path / "ipos.json").write_text(json.dumps({"ipos": [{"no": 0, "name": "가"}, {"no": 0, "name": "나"}]}), "utf-8")
+    run(tmp_path, None, "", NOW, fetch=fake_fetch, post=Rec())
+    names = [f["name"] for f in json.loads((tmp_path / "ipos.json").read_text("utf-8"))["detail_failures"] if f["no"] == 0]
+    assert sorted(names) == ["가", "나"]
