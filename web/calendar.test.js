@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { monthGrid, barsForMonth, listForMonth, needsRefresh, splitSegments, signalRows, evidenceLine, trustText, verdictHeader, factGrid, resultGrid, todayStrip, pastWeeks, countBarsIn, showApplyButton } from './calendar.js';
+import { monthGrid, barsForMonth, listForMonth, needsRefresh, splitSegments, signalRows, evidenceLine, trustText, verdictHeader, factGrid, resultGrid, todayStrip, pastWeeks, countBarsIn, showApplyButton, pushPanelState, pushTargetNo } from './calendar.js';
 
 const A = { no: 77, name: 'A', sub_start: '2026-11-27', sub_end: '2026-11-30', flag_count: 2, is_spac: false };
 
@@ -902,4 +902,19 @@ test('showApplyButton: a withdrawn stock offers the button only to take the mark
   assert.equal(showApplyButton(WD, new Set()), false);
   assert.equal(showApplyButton(WD, new Set([7])), true);
   assert.equal(showApplyButton(S(2, 'y', { first_close: 5000 }), new Set([2])), false);
+});
+
+test('pushPanelState: three states, nothing before the permission is known, a changed token warns', () => {
+  assert.equal(pushPanelState(null, null, false), null);
+  assert.deepEqual(pushPanelState('denied', 'T', false), { status: 'off', text: '알림 권한이 꺼져 있어요', canCopy: false, warn: '' });
+  assert.deepEqual(pushPanelState('granted', null, false), { status: 'none', text: '토큰을 받지 못했어요', canCopy: false, warn: '' });
+  assert.deepEqual(pushPanelState('granted', 'T', false), { status: 'ready', text: '알림 토큰이 준비됐어요', canCopy: true, warn: '' });
+  assert.match(pushPanelState('granted', 'T', true).warn, /FCM_TOKEN/);
+  assert.equal(pushPanelState('denied', 'T', true).warn, '');           // no permission: the permission problem comes first
+});
+
+test('pushTargetNo: the stock number after the # of the push link, else null', () => {
+  assert.equal(pushTargetNo('https://egoist-yun.github.io/ipo-alert/#2352'), 2352);
+  assert.equal(pushTargetNo(' https://s/#7 '), 7);
+  for (const bad of ['', null, undefined, 'https://s/', 'https://s/#record', 'https://s/#12x']) assert.equal(pushTargetNo(bad), null);
 });

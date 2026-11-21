@@ -518,3 +518,20 @@ export function pastWeeks(weeks, todayIso, year, month) {
 export function countBarsIn(bars, from, to) {
   return bars.filter(b => b.start <= to && b.end >= from).length;
 }
+
+// ---- App push notifications (FCM) ----
+// The panel on the record screen. perm: the plugin's `receive` permission ('granted', 'denied', 'prompt' ...) or null while not
+// asked yet (no panel); token: the device token or null; changed: the token differs from the one the user last had.
+export function pushPanelState(perm, token, changed) {
+  if (perm == null) return null;
+  if (perm !== 'granted') return { status: 'off', text: '알림 권한이 꺼져 있어요', canCopy: false, warn: '' };
+  if (!token) return { status: 'none', text: '토큰을 받지 못했어요', canCopy: false, warn: '' };
+  return { status: 'ready', text: '알림 토큰이 준비됐어요', canCopy: true,
+    warn: changed ? '토큰이 바뀌었어요. GitHub 비밀값 FCM_TOKEN을 새 값으로 바꿔 주세요' : '' };
+}
+
+// The stock a push opens: the push carries the site link ".../#<no>" in data.url. Anything else: null.
+export function pushTargetNo(url) {
+  const m = /#(\d+)$/.exec(String(url || '').trim());
+  return m ? Number(m[1]) : null;
+}

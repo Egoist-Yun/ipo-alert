@@ -1,9 +1,9 @@
-import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, recordRows, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks, barTone, offerInfoRows, layoutWeek, splitSegments, signalRows, verdictHeader, factGrid, resultGrid, todayStrip, pastWeeks, countBarsIn, showApplyButton } from './calendar.js';
+import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, recordRows, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks, barTone, offerInfoRows, layoutWeek, splitSegments, signalRows, verdictHeader, factGrid, resultGrid, todayStrip, pastWeeks, countBarsIn, showApplyButton, pushPanelState, pushTargetNo } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
 const loadedAt = Date.now();
-const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null, ledger: null, routed: false, applied: new Set(), canApply: false, alarmOff: false, doneOpen: false, pastOpen: false, pastKey: '' };
+const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null, ledger: null, routed: false, applied: new Set(), canApply: false, alarmOff: false, doneOpen: false, pastOpen: false, pastKey: '', push: { perm: null, token: null, changed: false, showText: false } };
 
 function h(tag, props, ...kids) {
   const el = document.createElement(tag);
@@ -404,12 +404,74 @@ function modelNodes(ipo) {
 function renderRecord() {
   const ledger = state.ledger;
   const r = recordRows(ledger);
-  if (!r) { $('record').replaceChildren(h('div', { class: 'panel' }, h('h4', {}, '실전 성적'), h('p', { class: 'p' }, '아직 기록이 없어요.'))); return; }
+  if (!r) { $('record').replaceChildren(h('div', { class: 'panel' }, h('h4', {}, '실전 성적'), h('p', { class: 'p' }, '아직 기록이 없어요.')), ...pushPanelNodes()); return; }
   const nodes = [h('h4', {}, `실전 성적 (${ledger.since.slice(5).replace('-', '/')} 이후 상장 전에 저장한 예측)`)];
   if (!r.rows.length) nodes.push(h('p', { class: 'p' }, '아직 저장된 예측이 없어요.'));
   for (const [label, value] of r.rows) nodes.push(kv(label, value));
   if (r.early) nodes.push(h('p', { class: 'p' }, '아직 판단하기 일러요.'));
-  $('record').replaceChildren(h('div', { class: 'panel' }, nodes));
+  $('record').replaceChildren(h('div', { class: 'panel' }, nodes), ...pushPanelNodes());
+}
+
+// App push (FCM): only in the Android app whose build has the plugin; an older APK and any browser do nothing here.
+const pusher = () => (isNativeApp(window) ? window.Capacitor?.Plugins?.PushNotifications : undefined);
+
+function lsGet(key) { try { return window.localStorage.getItem(key); } catch (e) { return null; } }
+function lsSet(key, value) { try { window.localStorage.setItem(key, value); } catch (e) { /* storage unavailable: the panel still works for this run */ } }
+function lsDel(key) { try { window.localStorage.removeItem(key); } catch (e) { /* ignore */ } }
+
+function pushPanelNodes() {
+  const view = pusher() ? pushPanelState(state.push.perm, state.push.token, state.push.changed) : null;
+  if (!view) return [];
+  const nodes = [h('h4', {}, '앱 알림'), h('p', { class: 'p' }, view.text)];
+  if (view.warn) nodes.push(h('p', { class: 'p' }, view.warn));
+  if (view.canCopy) {
+    nodes.push(h('button', { class: 'btn-medium', type: 'button', onclick: copyPushToken }, '토큰 복사'));
+    if (state.push.showText) nodes.push(h('p', { class: 'p token' }, state.push.token));
+  }
+  return [h('div', { class: 'panel' }, nodes)];
+}
+
+async function copyPushToken() {
+  try {
+    await navigator.clipboard.writeText(state.push.token);
+    showToast('토큰을 복사했어요');
+  } catch (e) {
+    state.push.showText = true;   // no clipboard access: show the token as selectable text instead
+  }
+  state.push.changed = false;
+  lsDel('fcmChanged');
+  renderRecord();
+}
+
+async function initPush() {
+  const PN = pusher();
+  if (!PN) return;
+  try {
+    state.push.token = lsGet('fcmToken');
+    state.push.changed = lsGet('fcmChanged') === '1';
+    PN.addListener('registration', t => {
+      const value = t && t.value;
+      if (!value) return;
+      const before = lsGet('fcmToken');
+      if (before && before !== value) { state.push.changed = true; lsSet('fcmChanged', '1'); }
+      lsSet('fcmToken', value);
+      state.push.token = value;
+      renderRecord();
+    });
+    PN.addListener('registrationError', () => { state.push.token = null; renderRecord(); });
+    PN.addListener('pushNotificationActionPerformed', ev => {
+      const no = pushTargetNo(ev && ev.notification && ev.notification.data && ev.notification.data.url);
+      if (no) location.hash = String(no);
+    });
+    // Android does not show a push that arrives while the app is open: say it with the toast.
+    PN.addListener('pushNotificationReceived', n => { if (n && (n.title || n.body)) showToast(n.title || n.body); });
+    await PN.createChannel({ id: 'ipo-alerts', name: '공모주 알림', importance: 4 });
+    let perm = await PN.checkPermissions();
+    if (perm.receive !== 'granted' && perm.receive !== 'denied') perm = await PN.requestPermissions();
+    state.push.perm = perm.receive;
+    if (perm.receive === 'granted') await PN.register();
+  } catch (e) { console.error(e); }
+  renderRecord();
 }
 
 // The rows under the title: today, the next subscriptions, my next listing day (see todayStrip). Hidden when there is nothing.
@@ -543,6 +605,7 @@ async function init() {
   window.addEventListener('popstate', route);
   route();
   syncListingAlarms();
+  initPush();
 }
 
 init();

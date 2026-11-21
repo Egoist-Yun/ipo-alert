@@ -191,3 +191,5 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .past b { color: var(--foreground); font-weight: 600; }
 .past::after { content: ''; width: 8px; height: 8px; margin-right: 4px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); }
 .past.open::after { transform: rotate(-135deg); }
+/* the FCM device token shown as text when the clipboard is not available: selectable, breaks anywhere */
+.token { user-select: all; word-break: break-all; font-size: 0.8125rem; color: var(--muted); }
