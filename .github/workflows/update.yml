@@ -44,7 +44,6 @@ jobs:
         continue-on-error: true
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-          FCM_TOKEN: ${{ secrets.FCM_TOKEN }}
           FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
         run: python -m ipo.main
@@ -87,7 +86,6 @@ jobs:
         if: ${{ failure() && steps.run.outcome != 'failure' }}
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-          FCM_TOKEN: ${{ secrets.FCM_TOKEN }}
           FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
         run: |
           MSG="GitHub Actions update가 실패했어요. 데이터가 갱신되지 않았을 수 있어요."

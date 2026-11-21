@@ -9,7 +9,7 @@ import requests
 
 from ipo.config import DISCLAIMER
 from ipo.models import Ipo
-from ipo.push import InvalidToken, fcm_send
+from ipo.push import fcm_send
 
 NTFY_URL = "https://ntfy.sh"
 
@@ -137,14 +137,12 @@ def format_pre_alert(ipo: Ipo, site_url: str) -> dict:
 @dataclass(frozen=True)
 class Target:
     """Where alerts go: FCM push to the app first, ntfy as the fallback. Secrets stay out of repr and logs."""
-    topic: str | None = None
-    fcm_token: str | None = field(default=None, repr=False)
-    fcm_sa: dict | None = field(default=None, repr=False)
-    notes: dict = field(default_factory=dict, compare=False, repr=False)   # once-per-run flags
+    topic: str | None = None                                  # the ntfy topic
+    fcm_sa: dict | None = field(default=None, repr=False)     # service account: FCM sends to the app's topic with it
 
     @property
     def fcm(self) -> bool:
-        return bool(self.fcm_token and self.fcm_sa)
+        return bool(self.fcm_sa)
 
     def __bool__(self) -> bool:
         return bool(self.topic or self.fcm)
@@ -157,36 +155,28 @@ def _ntfy(payload: dict, topic: str, post) -> None:
 
 
 def send(payload: dict, target: Target, post=requests.post) -> None:
-    """FCM first; when it fails ntfy takes over (no ntfy topic: the error goes up). A dead device token additionally
-    sends one notice per run through ntfy, because nothing else tells the user the pushes stopped reaching the phone."""
+    """FCM first; when it fails ntfy takes over (no ntfy topic: the error goes up). Note: a topic send also succeeds when
+    nobody is subscribed, so that case never reaches ntfy."""
     if not target:
         raise RuntimeError("no notification target configured")
     if target.fcm:
         try:
-            fcm_send(payload, target.fcm_token, target.fcm_sa)
+            fcm_send(payload, target.fcm_sa)
             return
         except Exception as e:
             print(f"FCM failed: {type(e).__name__}: {e}")   # no traceback: a library error body must not land in a public log
             if not target.topic:
                 raise
             _ntfy(payload, target.topic, post)
-            if isinstance(e, InvalidToken) and not target.notes.get("token_notice"):
-                target.notes["token_notice"] = True
-                try:                                          # the alert itself is delivered: a failed notice must not make the caller resend it
-                    _ntfy({"title": "앱 알림 토큰이 무효예요",
-                           "message": "앱의 실전 성적 화면에서 새 토큰을 복사해 GitHub 비밀값 FCM_TOKEN을 바꿔 주세요"}, target.topic, post)
-                except Exception as e2:
-                    print(f"token notice failed: {type(e2).__name__}")
             return
     _ntfy(payload, target.topic, post)
 
 
 def target_from_env(env=None, post=requests.post) -> Target:
-    """Target from NTFY_TOPIC, FCM_TOKEN and FCM_SERVICE_ACCOUNT (JSON text). An unreadable service account turns FCM
+    """Target from NTFY_TOPIC and FCM_SERVICE_ACCOUNT (JSON text). An unreadable service account turns FCM
     off and, when ntfy is set, says so once through ntfy. Values are never printed."""
     env = os.environ if env is None else env
     topic = env.get("NTFY_TOPIC") or None
-    token = env.get("FCM_TOKEN") or None
     raw = env.get("FCM_SERVICE_ACCOUNT") or None
     sa = None
     if raw:
@@ -203,7 +193,7 @@ def target_from_env(env=None, post=requests.post) -> Target:
                            "message": "GitHub 비밀값 FCM_SERVICE_ACCOUNT를 읽지 못해 ntfy로만 보내요"}, topic, post)
                 except Exception:
                     traceback.print_exc()
-    return Target(topic=topic, fcm_token=token, fcm_sa=sa)
+    return Target(topic=topic, fcm_sa=sa)
 
 
 def failure_alert(reason: str) -> dict:

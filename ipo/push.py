@@ -1,23 +1,20 @@
-"""Push through Firebase Cloud Messaging (HTTP v1). Nothing here logs the token, the service account or the access token."""
+"""Push through Firebase Cloud Messaging (HTTP v1) to the topic every installed app subscribes to (MainActivity).
+Nothing here logs the service account or the access token."""
 import sys
 
 import requests
 
 SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
 CHANNEL_ID = "ipo-alerts"
+TOPIC = "ipo-alerts"  # public on purpose: sending to it needs the service account
 _FCM_ERROR = "type.googleapis.com/google.firebase.fcm.v1.FcmError"
-_BAD_REQUEST = "type.googleapis.com/google.rpc.BadRequest"
 TOKEN_REFRESH_TIMEOUT = 15  # google-auth waits 120 s by default; a stuck token request must not block every send
 _credentials: dict = {}  # service account e-mail -> google credentials, reused inside one process
 
 
-class InvalidToken(Exception):
-    """FCM says the device token is gone or malformed: it has to be replaced by hand (GitHub secret FCM_TOKEN)."""
-
-
-def fcm_message(payload: dict, token: str) -> dict:
+def fcm_message(payload: dict) -> dict:
     return {"message": {
-        "token": token,
+        "topic": TOPIC,
         "notification": {"title": payload["title"], "body": payload["message"][:1000]},
         "data": {"url": payload.get("click", "")},
         "android": {"priority": "high", "notification": {"channel_id": CHANNEL_ID}},
@@ -38,35 +35,26 @@ def _access_token(sa_info: dict) -> str:
     return creds.token
 
 
-def _error_info(resp) -> tuple[str, str, bool]:
-    """(status, FCM errorCode, token is dead) from an FCM v1 error body. Only an FcmError UNREGISTERED or a BadRequest
-    violation on the token field means the device token is bad; a bare 404 / INVALID_ARGUMENT can be a wrong project id or payload."""
+def _error_info(resp) -> tuple[str, str]:
+    """(status, FCM errorCode) from an FCM v1 error body; empty strings when the body is not that shape."""
     try:
         err = resp.json().get("error") or {}
         status = str(err.get("status") or "")
-        error_code, dead = "", False
-        for d in err.get("details") or []:
-            kind = d.get("@type")
-            if kind == _FCM_ERROR:
-                error_code = str(d.get("errorCode") or "")
-                dead = dead or error_code == "UNREGISTERED"
-            elif kind == _BAD_REQUEST:
-                dead = dead or any("token" in str(v.get("field") or "") for v in d.get("fieldViolations") or [])
-        return status, error_code, dead
+        error_code = next((str(d.get("errorCode") or "") for d in err.get("details") or [] if d.get("@type") == _FCM_ERROR), "")
+        return status, error_code
     except Exception:
-        return "", "", False
+        return "", ""
 
 
-def fcm_send(payload: dict, token: str, sa_info: dict, post=requests.post, access_token: str | None = None) -> None:
+def fcm_send(payload: dict, sa_info: dict, post=requests.post, access_token: str | None = None) -> None:
     bearer = access_token or _access_token(sa_info)
     url = f"https://fcm.googleapis.com/v1/projects/{sa_info['project_id']}/messages:send"
-    resp = post(url, json=fcm_message(payload, token), headers={"Authorization": f"Bearer {bearer}"}, timeout=10)
+    resp = post(url, json=fcm_message(payload), headers={"Authorization": f"Bearer {bearer}"}, timeout=10)
     code = resp.status_code
     if code < 400:
         return
-    status, error_code, dead = _error_info(resp)
-    text = f"FCM {code} {status} {error_code}".strip()
-    raise (InvalidToken if dead else RuntimeError)(text)
+    status, error_code = _error_info(resp)
+    raise RuntimeError(f"FCM {code} {status} {error_code}".strip())
 
 
 def main(argv: list[str] | None = None, env=None, post=requests.post) -> int:
