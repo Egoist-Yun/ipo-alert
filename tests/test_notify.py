@@ -4,7 +4,7 @@ from datetime import datetime
 from ipo.config import DISCLAIMER, KST
 from ipo.models import Ipo
 from ipo.notify import (digest_run, due_alerts, failure_alert, format_digest, group_alerts, load_state, mark_digest,
-                        mark_sent, save_state, send)
+                        mark_sent, save_state, send, Target)
 
 
 def kst(y, m, d, h, minute=0):
@@ -58,7 +58,7 @@ def test_spac_and_no_result_do_not_alert():
 
 def test_send_posts_json():
     calls = []
-    send({"title": "t"}, "topic-x", post=lambda url, json, timeout: calls.append((url, json)))
+    send({"title": "t"}, Target(topic="topic-x"), post=lambda url, json, timeout: calls.append((url, json)))
     assert calls[0][0] == "https://ntfy.sh" and calls[0][1]["topic"] == "topic-x"
     assert calls[0][1]["title"] == "t"
 

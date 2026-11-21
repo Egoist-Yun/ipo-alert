@@ -1,4 +1,7 @@
 import json
+import os
+import traceback
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -6,6 +9,7 @@ import requests
 
 from ipo.config import DISCLAIMER
 from ipo.models import Ipo
+from ipo.push import InvalidToken, fcm_send
 
 NTFY_URL = "https://ntfy.sh"
 
@@ -130,10 +134,73 @@ def format_pre_alert(ipo: Ipo, site_url: str) -> dict:
     }
 
 
-def send(payload: dict, topic: str, post=requests.post) -> None:
+@dataclass(frozen=True)
+class Target:
+    """Where alerts go: FCM push to the app first, ntfy as the fallback. Secrets stay out of repr and logs."""
+    topic: str | None = None
+    fcm_token: str | None = field(default=None, repr=False)
+    fcm_sa: dict | None = field(default=None, repr=False)
+    notes: dict = field(default_factory=dict, compare=False, repr=False)   # once-per-run flags
+
+    @property
+    def fcm(self) -> bool:
+        return bool(self.fcm_token and self.fcm_sa)
+
+    def __bool__(self) -> bool:
+        return bool(self.topic or self.fcm)
+
+
+def _ntfy(payload: dict, topic: str, post) -> None:
     resp = post(NTFY_URL, json={**payload, "topic": topic}, timeout=10)
     if hasattr(resp, "raise_for_status"):
         resp.raise_for_status()
+
+
+def send(payload: dict, target: Target, post=requests.post) -> None:
+    """FCM first; when it fails ntfy takes over (no ntfy topic: the error goes up). A dead device token additionally
+    sends one notice per run through ntfy, because nothing else tells the user the pushes stopped reaching the phone."""
+    if not target:
+        raise RuntimeError("no notification target configured")
+    if target.fcm:
+        try:
+            fcm_send(payload, target.fcm_token, target.fcm_sa)
+            return
+        except Exception as e:
+            traceback.print_exc()
+            if not target.topic:
+                raise
+            _ntfy(payload, target.topic, post)
+            if isinstance(e, InvalidToken) and not target.notes.get("token_notice"):
+                target.notes["token_notice"] = True
+                _ntfy({"title": "앱 알림 토큰이 무효예요",
+                       "message": "앱의 실전 성적 화면에서 새 토큰을 복사해 GitHub 비밀값 FCM_TOKEN을 바꿔 주세요"}, target.topic, post)
+            return
+    _ntfy(payload, target.topic, post)
+
+
+def target_from_env(env=None, post=requests.post) -> Target:
+    """Target from NTFY_TOPIC, FCM_TOKEN and FCM_SERVICE_ACCOUNT (JSON text). An unreadable service account turns FCM
+    off and, when ntfy is set, says so once through ntfy. Values are never printed."""
+    env = os.environ if env is None else env
+    topic = env.get("NTFY_TOPIC") or None
+    token = env.get("FCM_TOKEN") or None
+    raw = env.get("FCM_SERVICE_ACCOUNT") or None
+    sa = None
+    if raw:
+        try:
+            sa = json.loads(raw)
+            if not isinstance(sa, dict) or not all(sa.get(k) for k in ("project_id", "client_email", "private_key")):
+                raise ValueError("missing fields")
+        except Exception as e:
+            print(f"FCM_SERVICE_ACCOUNT unreadable ({type(e).__name__}): FCM is off")
+            sa = None
+            if topic:
+                try:
+                    _ntfy({"title": "공모주 FCM 설정 읽기 실패",
+                           "message": "GitHub 비밀값 FCM_SERVICE_ACCOUNT를 읽지 못해 ntfy로만 보내요"}, topic, post)
+                except Exception:
+                    traceback.print_exc()
+    return Target(topic=topic, fcm_token=token, fcm_sa=sa)
 
 
 def failure_alert(reason: str) -> dict:

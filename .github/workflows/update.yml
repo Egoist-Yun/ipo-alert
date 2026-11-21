@@ -44,6 +44,8 @@ jobs:
         continue-on-error: true
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          FCM_TOKEN: ${{ secrets.FCM_TOKEN }}
+          FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
         run: python -m ipo.main
 
@@ -85,7 +87,13 @@ jobs:
         if: ${{ failure() && steps.run.outcome != 'failure' }}
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          FCM_TOKEN: ${{ secrets.FCM_TOKEN }}
+          FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
         run: |
-          if [ -n "$NTFY_TOPIC" ]; then
-            curl -s -H "Content-Type: application/json"               -d "{\"topic\":\"$NTFY_TOPIC\",\"title\":\"공모주 수집 실패\",\"message\":\"GitHub Actions update가 실패했어요. 데이터가 갱신되지 않았을 수 있어요.\"}"               https://ntfy.sh
-          fi
+          MSG="GitHub Actions update가 실패했어요. 데이터가 갱신되지 않았을 수 있어요."
+          # FCM (with ntfy as its fallback) through the project's own sender; plain ntfy if python or the dependencies are not there
+          python -m ipo.push "공모주 수집 실패" "$MSG" || {
+            if [ -n "$NTFY_TOPIC" ]; then
+              curl -s -H "Content-Type: application/json" -d "{\"topic\":\"$NTFY_TOPIC\",\"title\":\"공모주 수집 실패\",\"message\":\"$MSG\"}" https://ntfy.sh
+            fi
+          }

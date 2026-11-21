@@ -1,0 +1,24 @@
+name: test-push
+
+on:
+  workflow_dispatch:
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Send a test alert
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          FCM_TOKEN: ${{ secrets.FCM_TOKEN }}
+          FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
+        run: python -m ipo.push "공모주 테스트 알림" "이 알림이 앱 이름으로 보이면 푸시 설정이 끝난 거예요."

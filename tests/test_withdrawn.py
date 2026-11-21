@@ -4,6 +4,7 @@ from datetime import datetime
 from ipo.config import KST
 from ipo.ledger import fill_results, record_predictions, summarize
 from ipo.main import run
+from ipo.notify import Target
 from ipo.models import Ipo
 from tests.helpers import BARE_DETAIL
 from tests.test_main import NOW, Rec, fake_fetch
@@ -34,7 +35,7 @@ def _ipos(tmp_path):
 def test_a_stock_that_vanished_and_whose_page_is_gone_is_carried_as_withdrawn_with_one_alert(tmp_path):
     _write_previous(tmp_path)
     rec = Rec()
-    assert run(tmp_path, "t", "https://s/", NOW, fetch=_fetch(GONE), post=rec) == 0
+    assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=_fetch(GONE), post=rec) == 0
     kept = _ipos(tmp_path)[9001]
     assert kept["withdrawn"] == "2026-11-17" and kept["warning"] is None
     alerts = [c for c in rec.calls if c["title"] == "공모주 청약 철회"]
@@ -45,9 +46,9 @@ def test_a_stock_that_vanished_and_whose_page_is_gone_is_carried_as_withdrawn_wi
 
 def test_an_already_withdrawn_stock_is_carried_without_a_new_fetch_or_alert(tmp_path):
     _write_previous(tmp_path)
-    run(tmp_path, "t", "https://s/", NOW, fetch=_fetch(GONE), post=Rec())
+    run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=_fetch(GONE), post=Rec())
     seen, rec = [], Rec()
-    assert run(tmp_path, "t", "https://s/", NOW, fetch=_fetch(GONE, seen), post=rec) == 0
+    assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=_fetch(GONE, seen), post=rec) == 0
     assert seen == [] and _ipos(tmp_path)[9001]["withdrawn"] == "2026-11-17"
     assert not any(c["title"] == "공모주 청약 철회" for c in rec.calls)
 
@@ -55,7 +56,7 @@ def test_an_already_withdrawn_stock_is_carried_without_a_new_fetch_or_alert(tmp_
 def test_a_vanished_stock_whose_page_still_exists_is_a_failure_not_a_withdrawal(tmp_path):
     _write_previous(tmp_path)
     rec = Rec()
-    assert run(tmp_path, "t", "https://s/", NOW, fetch=_fetch(BARE_DETAIL), post=rec) == 0
+    assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=_fetch(BARE_DETAIL), post=rec) == 0
     data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
     kept = {i["no"]: i for i in data["ipos"]}[9001]
     assert kept["withdrawn"] is None                         # kept as it was, to be checked again
@@ -193,10 +194,10 @@ def test_a_failed_withdrawal_alert_is_retried_next_run(tmp_path):
 
     def boom(url, json, timeout):
         raise RuntimeError("ntfy down")
-    run(tmp_path, "t", "https://s/", NOW, fetch=_fetch(GONE), post=boom)
+    run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=_fetch(GONE), post=boom)
     assert "withdrawn:9001" not in json.loads((tmp_path / "state.json").read_text("utf-8")).get("sent", [])
     rec = Rec()
-    run(tmp_path, "t", "https://s/", NOW, fetch=_fetch(GONE), post=rec)
+    run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=_fetch(GONE), post=rec)
     assert len([c for c in rec.calls if c["title"] == "공모주 청약 철회"]) == 1
 
 

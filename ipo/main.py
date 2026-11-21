@@ -12,9 +12,9 @@ from ipo import config
 from ipo.collect import collect_current, detail_failure, detail_url, market_mood
 from ipo.fetch import FetchError, get_html
 from ipo.history import load_history, save_history, update_history
-from ipo.notify import (digest_run, due_alerts, failure_alert, format_digest, format_pre_alert, group_alerts, load_state, mark_digest, mark_sent,
+from ipo.notify import (Target, digest_run, due_alerts, failure_alert, format_digest, format_pre_alert, group_alerts, load_state, mark_digest, mark_sent,
                         save_state,
-                        send)
+                        send, target_from_env)
 from ipo.patterns import match_patterns, pattern_stats, warning_level
 from ipo.predict import _usable, calibrate, coverage_names, evaluate, predict_for, select_features
 from ipo.ledger import (fill_results, ledger_markdown, load_ledger, model_id, record_predictions, save_ledger,
@@ -158,7 +158,7 @@ def _carry_withdrawn(previous: list[Ipo], current: list[Ipo], history: list, now
     return carried
 
 
-def _withdrawn_alerts(data_dir: Path, ipos: list, topic: str, post) -> None:
+def _withdrawn_alerts(data_dir: Path, ipos: list, target: Target, post) -> None:
     """One notice per withdrawn stock, remembered only after it was sent (a failed send is tried again next run)."""
     path = data_dir / "state.json"
     state = load_state(path)
@@ -169,7 +169,7 @@ def _withdrawn_alerts(data_dir: Path, ipos: list, topic: str, post) -> None:
             continue
         period = f"{_md(ipo.sub_start)}~{_md(ipo.sub_end)}" if ipo.sub_start and ipo.sub_end else "일정 미정"
         try:
-            send({"title": "공모주 청약 철회", "message": f"{ipo.name} · 청약 {period} 예정이었어요"}, topic, post=post)
+            send({"title": "공모주 청약 철회", "message": f"{ipo.name} · 청약 {period} 예정이었어요"}, target, post=post)
         except Exception:
             traceback.print_exc()
             continue
@@ -207,7 +207,7 @@ def _update_ledger(data_dir: Path, ipos: list, now_kst: datetime, errors: list |
         return None
 
 
-def _problem_alerts(topic: str, failures: list, ledger_errors: list, post) -> None:
+def _problem_alerts(target: Target, failures: list, ledger_errors: list, post) -> None:
     """Short notices for problems that did not stop the run. A failed notice is only logged."""
     notices = []
     if failures:
@@ -216,12 +216,12 @@ def _problem_alerts(topic: str, failures: list, ledger_errors: list, post) -> No
         notices.append({"title": "공모주 기록부 갱신 실패", "message": ledger_errors[0][:300]})
     for notice in notices:
         try:
-            send(notice, topic, post=post)
+            send(notice, target, post=post)
         except Exception:
             traceback.print_exc()
 
 
-def _send_alerts(data_dir: Path, ipos: list, topic: str, site_url: str, now_kst: datetime, post) -> None:
+def _send_alerts(data_dir: Path, ipos: list, target: Target, site_url: str, now_kst: datetime, post) -> None:
     """Result and eve alerts go out as one digest each, then the pre-listing alerts one by one. A key is remembered (and
     the state saved) only after its send succeeded, so a failed send is tried again on the next run."""
     path = data_dir / "state.json"
@@ -236,7 +236,7 @@ def _send_alerts(data_dir: Path, ipos: list, topic: str, site_url: str, now_kst:
                 save_state(path, state)
             continue
         try:
-            send(format_digest(kind, [ipo for _, ipo in items], site_url), topic, post=post)
+            send(format_digest(kind, [ipo for _, ipo in items], site_url), target, post=post)
         except Exception:
             traceback.print_exc()
             continue
@@ -246,7 +246,7 @@ def _send_alerts(data_dir: Path, ipos: list, topic: str, site_url: str, now_kst:
         save_state(path, state)
     for key, ipo in groups["pre"]:
         try:
-            send(format_pre_alert(ipo, site_url), topic, post=post)
+            send(format_pre_alert(ipo, site_url), target, post=post)
         except Exception:
             traceback.print_exc()
             continue
@@ -255,7 +255,7 @@ def _send_alerts(data_dir: Path, ipos: list, topic: str, site_url: str, now_kst:
     save_state(path, state)
 
 
-def run(data_dir: Path, topic: str | None, site_url: str, now_kst: datetime,
+def run(data_dir: Path, target: Target | None, site_url: str, now_kst: datetime,
         fetch=get_html, post=requests.post) -> int:
     data_dir = Path(data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -277,23 +277,22 @@ def run(data_dir: Path, topic: str | None, site_url: str, now_kst: datetime,
         _atomic_write(data_dir / "ipos.json", json.dumps(payload, ensure_ascii=False))
     except Exception as e:
         traceback.print_exc()
-        if topic:
+        if target:
             try:
-                send(failure_alert(f"{type(e).__name__}: {e}"), topic, post=post)
+                send(failure_alert(f"{type(e).__name__}: {e}"), target, post=post)
             except Exception:
                 traceback.print_exc()
         return 1
 
-    if topic:
-        _problem_alerts(topic, failures, ledger_errors, post)
-        _withdrawn_alerts(data_dir, ipos, topic, post)
-        _send_alerts(data_dir, ipos, topic, site_url, now_kst, post)
+    if target:
+        _problem_alerts(target, failures, ledger_errors, post)
+        _withdrawn_alerts(data_dir, ipos, target, post)
+        _send_alerts(data_dir, ipos, target, site_url, now_kst, post)
     return 0
 
 
 def main() -> None:
-    code = run(Path("data"), os.environ.get("NTFY_TOPIC") or None, os.environ.get("SITE_URL", ""),
-               datetime.now(config.KST))
+    code = run(Path("data"), target_from_env(), os.environ.get("SITE_URL", ""), datetime.now(config.KST))
     sys.exit(code)
 
 

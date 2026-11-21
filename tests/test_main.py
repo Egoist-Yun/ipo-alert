@@ -3,6 +3,7 @@ from datetime import datetime
 
 from ipo.config import KST
 from ipo.main import run
+from ipo.notify import Target
 from tests.helpers import BARE_DETAIL, load
 
 NOW = datetime(2026, 11, 17, 18, 0, tzinfo=KST)
@@ -32,7 +33,7 @@ class Rec:
 
 def test_run_writes_ipos_json_and_alerts_once(tmp_path):
     rec = Rec()
-    assert run(tmp_path, "t", "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
+    assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
     data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
     names = [i["name"] for i in data["ipos"]]
     assert "유캐스트" in names
@@ -47,7 +48,7 @@ def test_run_writes_ipos_json_and_alerts_once(tmp_path):
     assert state["digest_date"] == "2026-11-17" and any(k.startswith("result:") for k in state["sent"])
     assert (tmp_path / "history.json").exists() and (tmp_path / "state.json").exists()
     before = len(rec.calls)
-    assert run(tmp_path, "t", "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
+    assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
     assert len(rec.calls) == before
 
 
@@ -60,7 +61,7 @@ def test_run_without_topic_sends_nothing(tmp_path):
 def test_failure_keeps_old_file_and_alerts(tmp_path):
     (tmp_path / "ipos.json").write_text('{"ipos":[{"no":1}]}', "utf-8")
     rec = Rec()
-    code = run(tmp_path, "t", "https://s/", NOW, fetch=lambda u: "<html></html>", post=rec)
+    code = run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=lambda u: "<html></html>", post=rec)
     assert code != 0
     assert json.loads((tmp_path / "ipos.json").read_text("utf-8"))["ipos"] == [{"no": 1}]
     assert rec.calls[-1]["title"] == "공모주 수집 실패"
@@ -145,27 +146,27 @@ def test_a_ledger_failure_never_breaks_the_calendar(tmp_path, monkeypatch):
 def test_a_failed_digest_send_keeps_the_keys_and_the_digest_date_unchanged(tmp_path):
     def boom(url, json, timeout):
         raise RuntimeError("ntfy down")
-    assert run(tmp_path, "t", "https://s/", NOW, fetch=fake_fetch, post=boom) == 0
+    assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=fake_fetch, post=boom) == 0
     state = json.loads((tmp_path / "state.json").read_text("utf-8")) if (tmp_path / "state.json").exists() else {"sent": []}
     assert not any(k.startswith(("result:", "eve:")) for k in state.get("sent", []))
     assert "digest_date" not in state
     rec = Rec()                                    # the next run (ntfy back) sends the same digest
-    assert run(tmp_path, "t", "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
+    assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
     assert any(c["title"].startswith("수요예측 결과") for c in rec.calls)
 
 
 def test_before_6am_only_the_urgent_result_goes_out_and_it_is_not_the_morning_digest(tmp_path):
     early = datetime(2026, 11, 17, 5, 59, tzinfo=KST)
     rec = Rec()
-    assert run(tmp_path, "t", "https://s/", early, fetch=fake_fetch, post=rec) == 0
+    assert run(tmp_path, Target(topic="t"), "https://s/", early, fetch=fake_fetch, post=rec) == 0
     # the fixture's stock subscribes tomorrow (11/18): its result cannot wait, so it goes out even before 06:00
     assert [c["title"] for c in rec.calls] == ["수요예측 결과 1건"] and "유캐스트" in rec.calls[0]["message"]
     state = json.loads((tmp_path / "state.json").read_text("utf-8"))
     assert "digest_date" not in state                          # an urgent send is not the day's digest
-    assert run(tmp_path, "t", "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
+    assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
     assert [c["title"] for c in rec.calls] == ["수요예측 결과 1건", "내일 청약 1건"]   # 18:00: only the eve digest is new
     sent = len(rec.calls)
-    assert run(tmp_path, "t", "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
+    assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
     assert len(rec.calls) == sent
 
 
@@ -186,22 +187,22 @@ def test_a_morning_run_without_results_still_records_the_digest_date_so_the_afte
     from ipo.main import _send_alerts
     calls, post = _calls()
     waiting = _digest_ipo(1, inst_competition=None)                      # no demand result yet
-    _send_alerts(tmp_path, [waiting], "t", "https://s/", datetime(2026, 11, 19, 8, 17, tzinfo=KST), post)
+    _send_alerts(tmp_path, [waiting], Target(topic="t"), "https://s/", datetime(2026, 11, 19, 8, 17, tzinfo=KST), post)
     assert calls == []
     assert json.loads((tmp_path / "state.json").read_text("utf-8"))["digest_date"] == "2026-11-19"   # (a) nothing to send: still recorded
     late = _digest_ipo(1)                                                # the result arrives in the afternoon
-    _send_alerts(tmp_path, [late], "t", "https://s/", datetime(2026, 11, 19, 17, 47, tzinfo=KST), post)
+    _send_alerts(tmp_path, [late], Target(topic="t"), "https://s/", datetime(2026, 11, 19, 17, 47, tzinfo=KST), post)
     assert [c["title"] for c in calls] == []                            # not today: it waits for tomorrow's morning
-    _send_alerts(tmp_path, [late], "t", "https://s/", datetime(2026, 11, 20, 8, 17, tzinfo=KST), post)
+    _send_alerts(tmp_path, [late], Target(topic="t"), "https://s/", datetime(2026, 11, 20, 8, 17, tzinfo=KST), post)
     assert [c["title"] for c in calls] == ["수요예측 결과 1건"]
 
 
 def test_an_urgent_result_still_goes_out_in_the_afternoon_after_an_empty_morning(tmp_path):
     from ipo.main import _send_alerts
     calls, post = _calls()
-    _send_alerts(tmp_path, [], "t", "https://s/", datetime(2026, 11, 19, 8, 17, tzinfo=KST), post)
+    _send_alerts(tmp_path, [], Target(topic="t"), "https://s/", datetime(2026, 11, 19, 8, 17, tzinfo=KST), post)
     urgent = _digest_ipo(2, sub_start="2026-11-20", sub_end="2026-11-21")   # subscribes tomorrow
-    _send_alerts(tmp_path, [urgent], "t", "https://s/", datetime(2026, 11, 19, 17, 47, tzinfo=KST), post)
+    _send_alerts(tmp_path, [urgent], Target(topic="t"), "https://s/", datetime(2026, 11, 19, 17, 47, tzinfo=KST), post)
     assert "수요예측 결과 1건" in [c["title"] for c in calls]
 
 
@@ -211,11 +212,11 @@ def test_a_failed_morning_send_is_not_recorded_and_the_afternoon_run_tries_again
 
     def boom(url, json, timeout):
         raise RuntimeError("ntfy down")
-    _send_alerts(tmp_path, [ipo], "t", "https://s/", datetime(2026, 11, 19, 8, 17, tzinfo=KST), boom)
+    _send_alerts(tmp_path, [ipo], Target(topic="t"), "https://s/", datetime(2026, 11, 19, 8, 17, tzinfo=KST), boom)
     state = json.loads((tmp_path / "state.json").read_text("utf-8"))
     assert "digest_date" not in state and "result:3" not in state["sent"]                       # (b)
     calls, post = _calls()
-    _send_alerts(tmp_path, [ipo], "t", "https://s/", datetime(2026, 11, 19, 17, 47, tzinfo=KST), post)
+    _send_alerts(tmp_path, [ipo], Target(topic="t"), "https://s/", datetime(2026, 11, 19, 17, 47, tzinfo=KST), post)
     assert [c["title"] for c in calls] == ["수요예측 결과 1건"]
     assert json.loads((tmp_path / "state.json").read_text("utf-8"))["digest_date"] == "2026-11-19"
 
@@ -248,7 +249,7 @@ def _fetch_with_broken_details(broken_nos=None):
 
 def test_one_broken_detail_page_does_not_stop_the_run_and_is_reported(tmp_path):
     rec = Rec()
-    assert run(tmp_path, "t", "https://s/", NOW, fetch=_fetch_with_broken_details({2352}), post=rec) == 0
+    assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=_fetch_with_broken_details({2352}), post=rec) == 0
     data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
     assert [f["no"] for f in data["detail_failures"]] == [2352]
     assert data["detail_failures"][0]["name"] == "유캐스트" and "anchor" in data["detail_failures"][0]["error"]
@@ -259,7 +260,7 @@ def test_one_broken_detail_page_does_not_stop_the_run_and_is_reported(tmp_path):
 
 def test_no_failures_means_no_detail_failures_key_and_no_problem_alert(tmp_path):
     rec = Rec()
-    run(tmp_path, "t", "https://s/", NOW, fetch=fake_fetch, post=rec)
+    run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=fake_fetch, post=rec)
     assert "detail_failures" not in json.loads((tmp_path / "ipos.json").read_text("utf-8"))
     assert not any("일부 실패" in c["title"] for c in rec.calls)
 
@@ -267,7 +268,7 @@ def test_no_failures_means_no_detail_failures_key_and_no_problem_alert(tmp_path)
 def test_mostly_broken_detail_pages_fail_the_run_and_keep_the_old_file(tmp_path):
     (tmp_path / "ipos.json").write_text('{"ipos":[{"no":1}]}', "utf-8")
     rec = Rec()
-    assert run(tmp_path, "t", "https://s/", NOW, fetch=_fetch_with_broken_details(), post=rec) == 1
+    assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=_fetch_with_broken_details(), post=rec) == 1
     assert json.loads((tmp_path / "ipos.json").read_text("utf-8"))["ipos"] == [{"no": 1}]
     assert rec.calls[-1]["title"] == "공모주 수집 실패" and "detail pages failed" in rec.calls[-1]["message"]
 
@@ -275,7 +276,7 @@ def test_mostly_broken_detail_pages_fail_the_run_and_keep_the_old_file(tmp_path)
 def test_a_failed_problem_alert_is_only_logged(tmp_path):
     def boom(url, json, timeout):
         raise RuntimeError("ntfy down")
-    assert run(tmp_path, "t", "https://s/", NOW, fetch=_fetch_with_broken_details({2352}), post=boom) == 0
+    assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=_fetch_with_broken_details({2352}), post=boom) == 0
 
 
 def test_a_ledger_failure_is_reported_in_the_payload_and_by_an_alert_but_the_run_goes_on(tmp_path, monkeypatch):
@@ -285,7 +286,7 @@ def test_a_ledger_failure_is_reported_in_the_payload_and_by_an_alert_but_the_run
         raise RuntimeError("ledger broke")
     monkeypatch.setattr(main, "record_predictions", boom)
     rec = Rec()
-    assert run(tmp_path, "t", "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
+    assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
     data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
     assert "ledger broke" in data["ledger_error"] and data["ledger"] is None
     alerts = [c for c in rec.calls if c["title"] == "공모주 기록부 갱신 실패"]
