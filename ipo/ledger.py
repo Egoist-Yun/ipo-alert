@@ -54,7 +54,7 @@ def record_predictions(ledger: dict, ipos: list[Ipo], now: datetime, model: str)
     added = 0
     for ipo in ipos:
         pred = ipo.prediction
-        if ipo.is_spac or not pred or _too_late(ipo, now):
+        if ipo.is_spac or ipo.withdrawn or not pred or _too_late(ipo, now):
             continue
         entry = ledger.get(str(ipo.no))
         prob = pred.get("prob")
@@ -84,6 +84,9 @@ def fill_results(ledger: dict, ipos: list[Ipo], now: datetime) -> int:
     filled = 0
     for ipo in ipos:
         entry = ledger.get(str(ipo.no))
+        if entry and ipo.withdrawn and not entry.get("withdrawn"):
+            entry["withdrawn"] = ipo.withdrawn  # called off: it will never have a result, so it is no longer "pending"
+            continue
         if not entry or entry.get("result") or ipo.first_close is None:
             continue
         offer = entry.get("offer_price") or ipo.final_price
@@ -101,7 +104,7 @@ def fill_results(ledger: dict, ipos: list[Ipo], now: datetime) -> int:
 def summarize(ledger: dict) -> dict:
     out = {"since": config.LEDGER_START}
     for key, target in (("pre", "close_down"), ("post", "open_down")):
-        saved = [e for e in ledger.values() if key in e]
+        saved = [e for e in ledger.values() if key in e and not e.get("withdrawn")]
         done = [e for e in saved if (e.get("result") or {}).get(target) is not None]
         warned = [e for e in done if e[key].get("warn")]
         strong = [e for e in warned if e[key].get("level") == "strong"]

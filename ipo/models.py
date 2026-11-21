@@ -45,6 +45,7 @@ class Ipo:
     prediction: dict | None = None
     patterns: list[dict] = field(default_factory=list)
     warning: str | None = None  # None | "warn" | "strong"
+    withdrawn: str | None = None  # KST date (YYYY-MM-DD) the offering was found to be called off: its page is gone and it left every list
     warning_pre: str | None = None  # the same judgment on the pre-subscription model only (differs from warning once the subscription has closed)
 
 

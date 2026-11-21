@@ -188,3 +188,13 @@ def test_float_pct_from_the_post_offering_total_row():
     assert parse_detail(_demand_page(float_row="공모후 합계"))["float_pct"] == 36.81
     assert parse_detail(_demand_page(float_row="합계"))["float_pct"] == 36.81
     assert parse_detail(_demand_page(float_row="최대주주등 소계"))["float_pct"] is None
+
+
+def test_is_missing_page_recognises_the_alert_only_page_and_nothing_else():
+    from ipo.parse import is_missing_page
+    alert = "<script>alert('해당 정보가 없습니다.');</script>"
+    assert is_missing_page(alert) is True
+    assert is_missing_page(load("detail_2336")) is False and is_missing_page(load("detail_2352")) is False
+    assert is_missing_page("<html><body>점검 중입니다</body></html>") is False               # short but not the "no such page" message
+    assert is_missing_page(alert + " " * 1000) is False                                      # a long page that merely contains the words
+    assert is_missing_page("") is False

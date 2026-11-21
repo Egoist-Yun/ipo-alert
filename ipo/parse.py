@@ -61,6 +61,12 @@ def _rows(html: str, date_col: int, date_re: str, min_cols: int) -> list[list]:
     return out
 
 
+def is_missing_page(html: str) -> bool:
+    """38.co.kr answers a withdrawn (or never existing) stock with a tiny page that only runs
+    alert('해당 정보가 없습니다.'): short, and carrying exactly that message."""
+    return len(html) < 1000 and "해당 정보가 없습니다" in html
+
+
 def _date(text: str) -> str | None:
     m = re.search(r"(\d{4})[./](\d{2})[./](\d{2})", text or "")
     return f"{m.group(1)}-{m.group(2)}-{m.group(3)}" if m else None

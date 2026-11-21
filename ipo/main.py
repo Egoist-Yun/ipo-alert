@@ -2,15 +2,15 @@ import json
 import os
 import sys
 import traceback
-from dataclasses import asdict, replace
+from dataclasses import asdict, fields, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import requests
 
 from ipo import config
-from ipo.collect import collect_current, market_mood
-from ipo.fetch import get_html
+from ipo.collect import collect_current, detail_failure, detail_url, market_mood
+from ipo.fetch import FetchError, get_html
 from ipo.history import load_history, save_history, update_history
 from ipo.notify import (digest_run, due_alerts, failure_alert, format_digest, format_pre_alert, group_alerts, load_state, mark_digest, mark_sent,
                         save_state,
@@ -19,6 +19,8 @@ from ipo.patterns import match_patterns, pattern_stats, warning_level
 from ipo.predict import _usable, calibrate, coverage_names, evaluate, predict_for, select_features
 from ipo.ledger import (fill_results, ledger_markdown, load_ledger, model_id, record_predictions, save_ledger,
                         summarize, update_backtest_md)
+from ipo.models import Ipo
+from ipo.parse import is_missing_page
 from ipo.signals import score
 
 CALENDAR_DAYS_BACK = 90
@@ -82,6 +84,68 @@ def _build(data_dir: Path, now_kst: datetime, fetch, failures: list | None = Non
         out.append(replace(scored, prediction=pred, patterns=matched, warning=warning_level(pred, matched),
                            warning_pre=_warning_pre(pred, matched)))
     return sorted(out, key=lambda i: (i.sub_start, i.no))
+
+
+def _previous_ipos(data_dir: Path) -> list[Ipo]:
+    """The stocks of the last run (data/ipos.json), read before this run overwrites it. Missing or broken: none (logged)."""
+    path = data_dir / "ipos.json"
+    if not path.exists():
+        return []
+    try:
+        names = {f.name for f in fields(Ipo)}
+        return [Ipo(**{k: v for k, v in d.items() if k in names}) for d in json.loads(path.read_text(encoding="utf-8"))["ipos"]]
+    except Exception:
+        traceback.print_exc()
+        return []
+
+
+def _carry_withdrawn(previous: list[Ipo], current: list[Ipo], now_kst: datetime, fetch, failures: list) -> list[Ipo]:
+    """A stock that was on the calendar but is in no list any more (and has not listed, listing day not past) is either
+    called off - its detail page answers "no such information" - or something else went wrong. Called off: it stays on the
+    calendar marked `withdrawn` (checked once, then carried without asking again). Anything else is a reported failure."""
+    today = now_kst.date().isoformat()
+    cutoff = (now_kst.date() - timedelta(days=CALENDAR_DAYS_BACK)).isoformat()
+    here = {i.no for i in current}
+    carried = []
+    for old in previous:
+        if old.no in here or old.first_close is not None or (old.listing_date and old.listing_date < today):
+            continue
+        if not old.withdrawn:
+            try:
+                gone = is_missing_page(fetch(detail_url(old.no)))
+            except FetchError as e:
+                failures.append(detail_failure(old.no, old.name, e))
+                continue
+            if not gone:
+                failures.append({"no": old.no, "name": old.name, "error": "목록에서 사라짐"})
+                continue
+            old = replace(old, withdrawn=today, warning=None)
+        if old.sub_start and old.sub_start >= cutoff:
+            carried.append(old)
+    return carried
+
+
+def _withdrawn_alerts(data_dir: Path, ipos: list, topic: str, post) -> None:
+    """One notice per withdrawn stock, remembered only after it was sent (a failed send is tried again next run)."""
+    path = data_dir / "state.json"
+    state = load_state(path)
+    sent = set(state.get("sent", []))
+    for ipo in ipos:
+        key = f"withdrawn:{ipo.no}"
+        if not ipo.withdrawn or key in sent:
+            continue
+        period = f"{_md(ipo.sub_start)}~{_md(ipo.sub_end)}" if ipo.sub_start and ipo.sub_end else "일정 미정"
+        try:
+            send({"title": "공모주 청약 철회", "message": f"{ipo.name} · 청약 {period} 예정이었어요"}, topic, post=post)
+        except Exception:
+            traceback.print_exc()
+            continue
+        mark_sent(state, [(key, ipo)])
+        save_state(path, state)
+
+
+def _md(iso: str) -> str:
+    return f"{int(iso[5:7])}/{int(iso[8:10])}"
 
 
 def _warning_pre(pred: dict | None, matched: list[dict]) -> str | None:
@@ -165,7 +229,9 @@ def run(data_dir: Path, topic: str | None, site_url: str, now_kst: datetime,
     try:
         raw_failures: list = []
         ledger_errors: list = []
+        previous = _previous_ipos(data_dir)  # read before anything is overwritten
         ipos = _build(data_dir, now_kst, fetch, raw_failures)
+        ipos = sorted(ipos + _carry_withdrawn(previous, ipos, now_kst, fetch, raw_failures), key=lambda i: (i.sub_start or "", i.no))
         failures = list({f["no"]: f for f in raw_failures}.values())  # a stock can fail in both the history and the current pass
         payload = {"updated_at": now_kst.isoformat(), "disclaimer": config.DISCLAIMER,
                    "ledger": _update_ledger(data_dir, ipos, now_kst, ledger_errors), "ipos": [asdict(i) for i in ipos]}
@@ -185,6 +251,7 @@ def run(data_dir: Path, topic: str | None, site_url: str, now_kst: datetime,
 
     if topic:
         _problem_alerts(topic, failures, ledger_errors, post)
+        _withdrawn_alerts(data_dir, ipos, topic, post)
         _send_alerts(data_dir, ipos, topic, site_url, now_kst, post)
     return 0
 

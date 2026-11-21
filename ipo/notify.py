@@ -38,7 +38,7 @@ def due_alerts(ipos: list[Ipo], state: dict, now_kst: datetime) -> list[tuple[st
     digest_time = digest_run(state, now_kst)
     due = []
     for ipo in ipos:
-        if ipo.is_spac or ipo.inst_competition is None:
+        if ipo.is_spac or ipo.withdrawn or ipo.inst_competition is None:
             continue
         pred = ipo.prediction or {}
         key = f"pre:{ipo.no}"
