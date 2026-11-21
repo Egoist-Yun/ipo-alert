@@ -59,8 +59,8 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
   /* every lane is thin: the visible bar is 20px; transparent 3px borders widen the tap area to 26px */
   box-sizing: content-box; border-top: 3px solid transparent; border-bottom: 3px solid transparent; background-clip: padding-box; }
 .bar.risk { background-color: var(--danger-weak); color: var(--danger); }
-/* my listing day (sell day) on the subscription calendar: "dot + name 상장", no fill; "now" = lists today; "done" = already listed */
-.bar.mark { padding: 0 2px; background-color: transparent; color: var(--weak-fg); font-weight: 600; text-align: left; }  /* one day cell wide: tight padding */
+/* my listing day (sell day) on the subscription calendar: "dot + name", no fill, from its own day cell to the right over free cells; "now" = lists today; "done" = already listed */
+.bar.mark { padding: 0 var(--space-xs); background-color: transparent; color: var(--weak-fg); font-weight: 600; text-align: left; }  /* spans free cells: normal bar text, light padding (the fill appears only for "now") */
 .bar.mark::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 3px; border-radius: 50%; background: currentColor; vertical-align: middle; }
 .bar.mark.now { background-color: var(--weak-bg); font-weight: 700; }
 /* past bars (subscription over, or already listed): grey; colour is only for what is still ahead. Selected/focus below win. */
@@ -176,3 +176,17 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .toast { position: fixed; left: 50%; bottom: calc(var(--space-xl) + var(--inset-bottom)); z-index: 3; transform: translateX(-50%); width: max-content; max-width: calc(100% - 2 * var(--space-lg)); padding: 12px var(--space-lg); border-radius: 12px; background: var(--foreground); color: var(--canvas); font-size: 0.9375rem; font-weight: 600; line-height: 1.5; text-align: center; opacity: 0; pointer-events: none; transition: opacity 200ms ease-out; }
 .toast.show { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+
+/* today strip under the title: rows between 1px rules, no cards; a row with a stock is a button */
+.today-strip { margin-top: var(--space-lg); border-top: 1px solid var(--border); }
+.trow { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-lg); width: 100%; min-height: 44px; padding: 10px 0; border: 0; border-bottom: 1px solid var(--border); background: transparent; font: inherit; text-align: left; color: inherit; }
+.trow .k { flex: none; color: var(--muted); font-size: 0.8125rem; }
+.trow .v { color: var(--foreground); font-size: 0.9375rem; font-weight: 600; text-align: right; }
+.trow .v.muted { color: var(--muted); font-weight: 400; }
+.trow .v small { display: block; color: var(--muted); font-size: 0.8125rem; font-weight: 400; }
+.trow .v small .now { color: var(--weak-fg); font-weight: 600; }
+/* folded weeks that are already over, above the first open week of the current month */
+.past { display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 44px; padding: 0; border: 0; border-top: 1px solid var(--border); background: transparent; color: var(--body); font: inherit; font-size: 0.875rem; text-align: left; }
+.past b { color: var(--foreground); font-weight: 600; }
+.past::after { content: ''; width: 8px; height: 8px; margin-right: 4px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); }
+.past.open::after { transform: rotate(-135deg); }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { monthGrid, barsForMonth, listForMonth, needsRefresh, splitSegments, signalRows, evidenceLine, trustText, verdictHeader, factGrid, resultGrid } from './calendar.js';
+import { monthGrid, barsForMonth, listForMonth, needsRefresh, splitSegments, signalRows, evidenceLine, trustText, verdictHeader, factGrid, resultGrid, todayStrip, pastWeeks, countBarsIn } from './calendar.js';
 
 const A = { no: 77, name: 'A', sub_start: '2026-11-27', sub_end: '2026-11-30', flag_count: 2, is_spac: false };
 
@@ -610,25 +610,34 @@ test('layoutWeek (b): a mark goes into the topmost lane whose day cell is free (
   assert.equal(res.lanes, 1);
 });
 
-test('layoutWeek (c): a mark stays inside its own day cell (it never stretches over the cells to its right)', () => {
-  const res = layoutWeek([B(0, 1, 'A'), B(4, 5, 'B')], [M(2, 'm')]);
-  assert.deepEqual(lanesOf(res, 'mark')[0], ['m', 0, 2, 2]);
+test('layoutWeek (c): a mark runs from its own day cell to the right over free cells, up to the last column', () => {
+  const monday = layoutWeek([], [M(0, 'm')]);
+  assert.deepEqual(lanesOf(monday, 'mark')[0], ['m', 0, 0, 6]);                 // (1) free to the right: all the way to column 6
   const open = layoutWeek([B(0, 0, 'A')], [M(3, 'm')]);
-  assert.deepEqual(lanesOf(open, 'mark')[0], ['m', 0, 3, 3]);
+  assert.deepEqual(lanesOf(open, 'mark')[0], ['m', 0, 3, 6]);                   // (3) the empty cells after the month's last day are free too
+});
+
+test('layoutWeek (c2): the next cell taken by a bar stops the mark at its own cell; a taken cell further right stops it before that cell', () => {
+  const next = layoutWeek([B(3, 4, 'B')], [M(2, 'm')]);
+  assert.deepEqual(lanesOf(next, 'mark')[0], ['m', 0, 2, 2]);                   // (2) the bar starts in the very next cell: just its own cell
+  const tight = layoutWeek([B(0, 1, 'A'), B(3, 4, 'B')], [M(2, 'm')]);
+  assert.deepEqual(lanesOf(tight, 'mark')[0], ['m', 0, 2, 2]);                  // (2) lane 0: cells 0-1 and 3-4 taken: only its own cell
+  const apart = layoutWeek([B(0, 1, 'A'), B(4, 5, 'B')], [M(2, 'm')]);
+  assert.deepEqual(lanesOf(apart, 'mark')[0], ['m', 0, 2, 3]);                  // stops before the bar at 4
 });
 
 test('layoutWeek (d): when no lane has the day cell free a new lane is added', () => {
   const res = layoutWeek([B(0, 2, 'A'), B(1, 3, 'B')], [M(2, 'm')]);   // lane 0: 0-2, lane 1: 1-3: cell 2 taken in both
-  assert.deepEqual(lanesOf(res, 'mark')[0], ['m', 2, 2, 2]);
+  assert.deepEqual(lanesOf(res, 'mark')[0], ['m', 2, 2, 6]);
   assert.equal(res.lanes, 3);
 });
 
-test('layoutWeek (e): two marks on the same day take two lanes; marks on different days share a lane', () => {
+test('layoutWeek (e): two marks on the same day take two lanes; marks on different days share a lane (the first stops before the second)', () => {
   const same = layoutWeek([], [M(2, 'x'), M(2, 'y')]);
-  assert.deepEqual(lanesOf(same, 'mark').map(m => [m[0], m[1]]), [['x', 0], ['y', 1]]);
+  assert.deepEqual(lanesOf(same, 'mark').map(m => [m[0], m[1]]), [['x', 0], ['y', 1]]);   // (4)
   assert.equal(same.lanes, 2);
   const apart = layoutWeek([], [M(1, 'x'), M(4, 'y')]);
-  assert.deepEqual(lanesOf(apart, 'mark'), [['x', 0, 1, 1], ['y', 0, 4, 4]]);
+  assert.deepEqual(lanesOf(apart, 'mark'), [['x', 0, 1, 3], ['y', 0, 4, 6]]);
   assert.equal(apart.lanes, 1);
 });
 
@@ -796,4 +805,64 @@ test('signalRows: equal severities (0) keep the original order and the price pos
     sig('lockup', 'C', 0.5, true, '5% 미만', 0.9),
   ] });
   assert.deepEqual(rows.map(r => r.label), ['C', 'A', 'B']);
+});
+
+
+// --- today strip, past weeks ---
+const S = (no, name, o = {}) => ({ no, name, first_close: null, ...o });
+const STRIP_TODAY = '2026-11-20';
+
+test('todayStrip 오늘: the first of listing today > last day > first day, with "외 N건" for the other stocks of today', () => {
+  const rows = todayStrip([
+    S(1, '마감주', { sub_start: '2026-11-19', sub_end: STRIP_TODAY }),
+    S(2, '시작주', { sub_start: STRIP_TODAY, sub_end: '2026-11-21' }),
+    S(3, '상장주', { sub_start: '2026-11-10', sub_end: '2026-11-11', listing_date: STRIP_TODAY }),
+  ], new Set(), STRIP_TODAY);
+  const r = rows.find(x => x.k === '오늘');
+  assert.deepEqual([r.v, r.sub, r.more, r.no], ['상장주', '오늘 상장', '외 2건', 3]);
+  const one = todayStrip([S(1, '마감주', { sub_start: '2026-11-19', sub_end: STRIP_TODAY })], new Set(), STRIP_TODAY).find(x => x.k === '오늘');
+  assert.deepEqual([one.v, one.sub, one.more], ['마감주', '오늘 마감', '']);
+  assert.equal(todayStrip([S(1, 'x', { sub_start: '2026-11-25', sub_end: '2026-11-26' })], new Set(), STRIP_TODAY).find(x => x.k === '오늘'), undefined);   // no row without a stock
+});
+
+test('todayStrip 다음 청약: stocks starting within 7 days of the earliest start, "외 N건, M/D까지" the latest end among them', () => {
+  const ipos = [
+    S(1, '가', { sub_start: '2026-11-23', sub_end: '2026-11-24' }),
+    S(2, '나', { sub_start: '2026-11-30', sub_end: '2026-12-01' }),    // 7 days after the earliest: in
+    S(3, '다', { sub_start: '2026-12-01', sub_end: '2026-12-02' }),    // 8 days: out
+  ];
+  const r = todayStrip(ipos, new Set(), STRIP_TODAY).find(x => x.k === '다음 청약');
+  assert.deepEqual([r.v, r.more, r.no], ['11/23 가', '외 1건, 12/1까지', 1]);
+  const single = todayStrip([ipos[0]], new Set(), STRIP_TODAY).find(x => x.k === '다음 청약');
+  assert.deepEqual([single.v, single.more], ['11/23 가', '']);
+  assert.equal(todayStrip([S(9, '지난', { sub_start: '2026-11-10', sub_end: '2026-11-11' })], new Set(), STRIP_TODAY).find(x => x.k === '다음 청약'), undefined);
+  assert.equal(todayStrip([S(9, '오늘시작', { sub_start: STRIP_TODAY, sub_end: '2026-11-21' })], new Set(), STRIP_TODAY).find(x => x.k === '다음 청약'), undefined);   // today is not "next"
+});
+
+test('todayStrip 내 상장일: the earliest listing day of what I applied for; undated and none have their own wording', () => {
+  const ipos = [
+    S(1, '가', { listing_date: '2026-12-02' }), S(2, '나', { listing_date: '2026-11-27' }), S(3, '다', { listing_date: null }),
+    S(4, '이미', { listing_date: '2026-11-12', first_close: 5000 }), S(5, '미신청', { listing_date: '2026-11-25' }),
+  ];
+  const mine = r => r.find(x => x.k === '내 상장일');
+  assert.deepEqual([mine(todayStrip(ipos, new Set([1, 2, 3, 4]), STRIP_TODAY)).v, mine(todayStrip(ipos, new Set([1, 2, 3, 4]), STRIP_TODAY)).more], ['11/27 나', '외 1건']);
+  assert.equal(mine(todayStrip(ipos, new Set([3]), STRIP_TODAY)).v, '상장일 미정');
+  const none = mine(todayStrip(ipos, new Set(), STRIP_TODAY));
+  assert.deepEqual([none.v, none.muted, none.no], ['신청 표시한 종목이 없어요', true, null]);
+  assert.equal(mine(todayStrip(ipos, new Set([4]), STRIP_TODAY)).muted, true);      // applied but already listed: nothing waiting
+});
+
+test('pastWeeks: the weeks of the shown month that end before today, only in the month that contains today', () => {
+  const weeks = monthGrid(2026, 11);                                   // Nov 2026: Mon 11/2 .. weeks of 1-1, 2-8, 9-15, 16-22, 23-29, 30
+  assert.deepEqual(pastWeeks(weeks, '2026-11-20', 2026, 11), { count: 3, from: '2026-11-01', to: '2026-11-15' });
+  assert.deepEqual(pastWeeks(weeks, '2026-11-01', 2026, 11), { count: 0, from: null, to: null });     // the first week is this week
+  assert.deepEqual(pastWeeks(weeks, '2026-11-30', 2026, 11), { count: 5, from: '2026-11-01', to: '2026-11-29' });   // month end: last week stays open
+  assert.deepEqual(pastWeeks(weeks, '2026-11-20', 2026, 10), { count: 0, from: null, to: null });     // another month
+  assert.deepEqual(pastWeeks(weeks, '2026-12-03', 2026, 11), { count: 0, from: null, to: null });
+});
+
+test('countBarsIn: distinct bars overlapping the folded date range', () => {
+  const bars = [{ no: 1, start: '2026-11-03', end: '2026-11-04' }, { no: 2, start: '2026-11-14', end: '2026-11-17' }, { no: 3, start: '2026-11-16', end: '2026-11-17' }];
+  assert.equal(countBarsIn(bars, '2026-11-01', '2026-11-15'), 2);
+  assert.equal(countBarsIn(bars, '2026-11-18', '2026-11-30'), 0);
 });

@@ -306,12 +306,19 @@ export function layoutWeek(barSegs, markSegs) {
     for (let c = seg.c0; c <= seg.c1; c++) lanes[li][c] = true;
     items.push({ seg, lane: li, c0: seg.c0, c1: seg.c1 });
   }
-  for (const seg of [...markSegs].sort((a, b) => a.c0 - b.c0)) {
+  // A listing mark starts in its own day cell and runs right over the free cells of its lane (the name needs the room), but
+  // never past the next mark's day (so two marks in one week can share a lane) and never past the last column.
+  const marks = [...markSegs].sort((a, b) => a.c0 - b.c0);
+  marks.forEach((seg, k) => {
     let li = lanes.findIndex(l => !l[seg.c0]);
     if (li < 0) li = newLane();
-    lanes[li][seg.c0] = true;
-    items.push({ seg, lane: li, c0: seg.c0, c1: seg.c0 });
-  }
+    const next = marks.slice(k + 1).find(m => m.c0 > seg.c0);
+    const limit = next ? next.c0 - 1 : 6;
+    let c1 = seg.c0;
+    while (c1 < limit && !lanes[li][c1 + 1]) c1++;
+    for (let c = seg.c0; c <= c1; c++) lanes[li][c] = true;
+    items.push({ seg, lane: li, c0: seg.c0, c1 });
+  });
   return { items, lanes: lanes.length };
 }
 
@@ -437,4 +444,66 @@ export function resultGrid(ipo) {
   cells.push({ k: '첫날 종가', v: `${fmtN(ipo.first_close)}원`, s: change(ipo.first_close) });
   if (ipo.listing_date) cells.push({ k: '상장일', v: monthDay(ipo.listing_date), s: '' });
   return cells;
+}
+
+
+// ---- Today strip, folded past weeks ----
+const addDays = (iso, n) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+
+// The rows under the title: what is on today, the next subscriptions, my next listing day. Independent of the month shown.
+// A row is {k, v, sub, more, no, muted}: `no` is the stock the row opens (null: not a button).
+export function todayStrip(ipos, applied, todayIso) {
+  const rows = [];
+
+  const todayRank = i => {
+    if (i.first_close != null) return 0;
+    if (i.listing_date === todayIso) return 3;
+    if (i.sub_end === todayIso && i.sub_start && i.sub_start <= todayIso) return 2;
+    if (i.sub_start === todayIso) return 1;
+    return 0;
+  };
+  const SUB = { 3: '오늘 상장', 2: '오늘 마감', 1: '오늘 청약 시작' };
+  const todays = ipos.filter(i => todayRank(i) > 0)
+    .sort((a, b) => todayRank(b) - todayRank(a) || a.no - b.no);
+  if (todays.length) {
+    rows.push({ k: '오늘', v: todays[0].name, sub: SUB[todayRank(todays[0])], more: todays.length > 1 ? `외 ${todays.length - 1}건` : '', no: todays[0].no, muted: false });
+  }
+
+  const upcoming = ipos.filter(i => i.sub_start && i.sub_start > todayIso)
+    .sort((a, b) => a.sub_start.localeCompare(b.sub_start) || a.no - b.no);
+  if (upcoming.length) {
+    const first = upcoming[0];
+    const group = upcoming.filter(i => i.sub_start <= addDays(first.sub_start, 7));
+    const lastEnd = group.map(i => i.sub_end || i.sub_start).sort().pop();
+    rows.push({ k: '다음 청약', v: `${monthDay(first.sub_start)} ${first.name}`, sub: '',
+      more: group.length > 1 ? `외 ${group.length - 1}건, ${monthDay(lastEnd)}까지` : '', no: first.no, muted: false });
+  }
+
+  const waiting = ipos.filter(i => applied.has(i.no) && i.first_close == null);
+  const dated = waiting.filter(i => i.listing_date && i.listing_date >= todayIso)
+    .sort((a, b) => a.listing_date.localeCompare(b.listing_date) || a.no - b.no);
+  if (!waiting.length) rows.push({ k: '내 상장일', v: '신청 표시한 종목이 없어요', sub: '', more: '', no: null, muted: true });
+  else if (!dated.length) rows.push({ k: '내 상장일', v: '상장일 미정', sub: '', more: '', no: waiting[0].no, muted: true });
+  else rows.push({ k: '내 상장일', v: `${monthDay(dated[0].listing_date)} ${dated[0].name}`, sub: '', more: dated.length > 1 ? `외 ${dated.length - 1}건` : '', no: dated[0].no, muted: false });
+  return rows;
+}
+
+// The weeks of the shown month that are over (their last real day is before today): folded into one line. Only for the month
+// that contains today. Returns how many weeks and the date range they cover.
+export function pastWeeks(weeks, todayIso, year, month) {
+  const none = { count: 0, from: null, to: null };
+  if (todayIso.slice(0, 7) !== `${year}-${pad(month)}`) return none;
+  const over = [];
+  for (const week of weeks) {
+    const real = week.filter(Boolean);
+    if (!real.length || real[real.length - 1] >= todayIso) break;
+    over.push(real);
+  }
+  if (!over.length) return none;
+  return { count: over.length, from: over[0][0], to: over[over.length - 1].slice(-1)[0] };
+}
+
+// How many different calendar bars touch a date range (for the "지난 청약 N건" line).
+export function countBarsIn(bars, from, to) {
+  return bars.filter(b => b.start <= to && b.end >= from).length;
 }

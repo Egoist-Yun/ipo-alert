@@ -1,9 +1,9 @@
-import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, recordRows, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks, barTone, offerInfoRows, layoutWeek, splitSegments, signalRows, verdictHeader, factGrid, resultGrid } from './calendar.js';
+import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, recordRows, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks, barTone, offerInfoRows, layoutWeek, splitSegments, signalRows, verdictHeader, factGrid, resultGrid, todayStrip, pastWeeks, countBarsIn } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
 const loadedAt = Date.now();
-const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null, ledger: null, routed: false, applied: new Set(), canApply: false, alarmOff: false, doneOpen: false };
+const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null, ledger: null, routed: false, applied: new Set(), canApply: false, alarmOff: false, doneOpen: false, pastOpen: false, pastKey: '' };
 
 function h(tag, props, ...kids) {
   const el = document.createElement(tag);
@@ -55,14 +55,26 @@ function renderCalendar() {
   const today = kstToday();
   const weeks = $('weeks');
   weeks.replaceChildren();
-  for (const week of monthGrid(year, month)) {
+  const grid = monthGrid(year, month);
+  // The weeks of the shown month that are already over fold into one line (only in the month that contains today).
+  if (state.pastKey !== `${year}-${month}`) { state.pastKey = `${year}-${month}`; state.pastOpen = false; }
+  const past = pastWeeks(grid, today, year, month);
+  if (past.count) {
+    const n = countBarsIn(bars, past.from, past.to);
+    const fold = h('button', { class: `past${state.pastOpen ? ' open' : ''}`, type: 'button', 'aria-expanded': state.pastOpen ? 'true' : 'false',
+      onclick: () => { state.pastOpen = !state.pastOpen; renderCalendar(); } },
+      h('span', {}, `${md(past.from)}~${md(past.to)} 지난 청약 `, h('b', {}, `${n}건`)));
+    weeks.append(fold);
+  }
+  for (const [wi, week] of grid.entries()) {
+    if (wi < past.count && !state.pastOpen) continue;
     const real = week.filter(Boolean);
     const lo = real[0], hi = real[real.length - 1];
     const barSegs = bars
       .map(b => ({ b, s: b.start < lo ? lo : b.start, e: b.end > hi ? hi : b.end }))
       .filter(x => x.s <= x.e)
       .map(x => ({ ...x, c0: week.indexOf(x.s), c1: week.indexOf(x.e) }));
-    // A listing mark is "dot + name" inside its own listing-day cell, placed after the bars in the topmost lane with that cell free.
+    // A listing mark is "dot + name": it starts in its own listing-day cell and runs right over the free cells (layoutWeek), placed after the bars.
     const markSegs = marks.filter(m => week.includes(m.date)).map(m => ({ mark: m, c0: week.indexOf(m.date) }));
     const { items } = layoutWeek(barSegs, markSegs);
     const el = h('div', { class: 'week' },
@@ -79,7 +91,7 @@ function renderCalendar() {
           style: place,
           'aria-label': `${m.name} 상장일 ${md(m.date)}, 청약 신청함`,
           onclick: () => select(m.no),
-        }, '상장'));  // the name is in the aria-label and the list below: the cell is too narrow for it
+        }, m.name));  // too long for the free cells: the bar's ellipsis cuts it
         continue;
       }
       const ipo = state.ipos.find(i => i.no === seg.b.no);
@@ -399,7 +411,22 @@ function renderRecord() {
   $('record').replaceChildren(h('div', { class: 'panel' }, nodes));
 }
 
+// The rows under the title: today, the next subscriptions, my next listing day (see todayStrip). Hidden when there is nothing.
+function renderStrip() {
+  const rows = todayStrip(state.ipos, state.applied, kstToday());
+  const box = $('today-strip');
+  box.hidden = !rows.length;
+  box.replaceChildren(...rows.map(r => {
+    const value = h('span', { class: `v${r.muted ? ' muted' : ''}` }, r.v,
+      (r.sub || r.more) && h('small', {}, [r.sub && h('span', { class: 'now' }, r.sub), r.sub && r.more && ' · ', r.more]));
+    const inner = [h('span', { class: 'k' }, r.k), value];
+    return r.no == null ? h('div', { class: 'trow' }, inner)
+      : h('button', { class: 'trow', type: 'button', onclick: () => select(r.no) }, inner);
+  }));
+}
+
 function render() {
+  renderStrip();
   renderCalendar();
   renderList();
 }
