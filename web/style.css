@@ -66,6 +66,7 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 /* past bars (subscription over, or already listed): grey; colour is only for what is still ahead. Selected/focus below win. */
 .bar.done { background-color: var(--surface); color: var(--body); }
 .bar.mark.done { background-color: transparent; color: var(--body); }  /* after .bar.done (grey fill): no fill for a mark */
+.bar.withdrawn { text-decoration: line-through; }  /* a called-off offering: grey (done) and struck through */
 .bar.cont-l { margin-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
 .bar.cont-r { margin-right: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .bar.selected { box-shadow: inset 0 0 0 2px var(--primary); }  /* inset: follows the visible 20px, not the 26px tap area */

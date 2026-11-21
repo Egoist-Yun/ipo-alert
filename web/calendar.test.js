@@ -808,7 +808,7 @@ test('signalRows: equal severities (0) keep the original order and the price pos
 });
 
 
-// --- today strip, past weeks ---
+// --- today strip, past weeks, withdrawn stocks ---
 const S = (no, name, o = {}) => ({ no, name, first_close: null, ...o });
 const STRIP_TODAY = '2026-11-20';
 
@@ -852,6 +852,14 @@ test('todayStrip 내 상장일: the earliest listing day of what I applied for; 
   assert.equal(mine(todayStrip(ipos, new Set([4]), STRIP_TODAY)).muted, true);      // applied but already listed: nothing waiting
 });
 
+test('todayStrip: withdrawn stocks appear in no row', () => {
+  const w = S(1, '철회', { withdrawn: '2026-11-20', sub_start: STRIP_TODAY, sub_end: '2026-11-21', listing_date: '2026-12-02' });
+  const rows = todayStrip([w, S(2, '다음', { sub_start: '2026-11-23', sub_end: '2026-11-24' })], new Set([1]), STRIP_TODAY);
+  assert.equal(rows.find(x => x.k === '오늘'), undefined);
+  assert.equal(rows.find(x => x.k === '다음 청약').v, '11/23 다음');
+  assert.equal(rows.find(x => x.k === '내 상장일').muted, true);
+});
+
 test('pastWeeks: the weeks of the shown month that end before today, only in the month that contains today', () => {
   const weeks = monthGrid(2026, 11);                                   // Nov 2026: Mon 11/2 .. weeks of 1-1, 2-8, 9-15, 16-22, 23-29, 30
   assert.deepEqual(pastWeeks(weeks, '2026-11-20', 2026, 11), { count: 3, from: '2026-11-01', to: '2026-11-15' });
@@ -865,4 +873,26 @@ test('countBarsIn: distinct bars overlapping the folded date range', () => {
   const bars = [{ no: 1, start: '2026-11-03', end: '2026-11-04' }, { no: 2, start: '2026-11-14', end: '2026-11-17' }, { no: 3, start: '2026-11-16', end: '2026-11-17' }];
   assert.equal(countBarsIn(bars, '2026-11-01', '2026-11-15'), 2);
   assert.equal(countBarsIn(bars, '2026-11-18', '2026-11-30'), 0);
+});
+
+const WD = S(7, '철회주', { withdrawn: '2026-11-20', sub_start: '2026-11-23', sub_end: '2026-11-24', listing_date: '2026-12-02', inst_competition: 100, warning: 'strong', flag_count: 4 });
+
+test('withdrawn: badge, bar tone, day status and verdict', () => {
+  assert.deepEqual(badgeInfo(WD), { text: '철회', tone: 'done' });
+  assert.equal(barTone(WD, '2026-11-20'), 'done');
+  assert.equal(dayStatus({ ...WD, listing_date: '2026-11-20' }, '2026-11-20'), null);
+  assert.deepEqual(verdictHeader(WD), { kind: 'wait', title: '청약이 철회됐어요', why: '', trust: null, conflict: false, shift: null });
+  assert.equal(factGrid(WD, '2026-11-20')[2].s, '철회됨');
+});
+
+test('withdrawn: list groups, alarms and listing marks', () => {
+  const ipos = [WD, S(8, '정상', { sub_start: '2026-11-23', sub_end: '2026-11-24' })];
+  const g = groupForList(ipos, 2026, 11, '2026-11-20', new Set());
+  assert.deepEqual(g.upcoming.map(i => i.no), [8]);
+  assert.deepEqual(g.done.map(i => i.no), [7]);                        // not applied: with the finished ones
+  const mine = groupForList(ipos, 2026, 11, '2026-11-20', new Set([7]));
+  assert.deepEqual(mine.applied.map(i => i.no), [7]);                  // applied: stays in "신청한 청약"
+  assert.deepEqual(listingAlarms(ipos, new Set([7, 8]), '2026-11-20T00:00:00Z'), []);
+  assert.deepEqual(listingMarks(ipos, new Set([7]), 2026, 12), []);
+  assert.equal(barLabel({ name: '철회주', risk: false, applied: false, withdrawn: true }), '철회주');
 });

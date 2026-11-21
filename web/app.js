@@ -103,10 +103,10 @@ function renderCalendar() {
       const contL = seg.s > seg.b.start ? ' cont-l' : '';
       const contR = seg.e < seg.b.end ? ' cont-r' : '';
       el.append(h('button', {
-        class: `bar ${bt}${contL}${contR}${state.selected === seg.b.no ? ' selected' : ''}`,
+        class: `bar ${bt}${seg.b.withdrawn ? ' withdrawn' : ''}${contL}${contR}${state.selected === seg.b.no ? ' selected' : ''}`,
         type: 'button',
         style: place,
-        'aria-label': `${state.applied.has(ipo.no) ? '청약 신청함, ' : ''}${seg.b.name}, ${badgeText(ipo)}, 청약 ${md(ipo.sub_start)}~${md(ipo.sub_end)}`,
+        'aria-label': `${state.applied.has(ipo.no) ? '청약 신청함, ' : ''}${seg.b.withdrawn ? '청약 철회, ' : ''}${seg.b.name}, ${badgeText(ipo)}, 청약 ${md(ipo.sub_start)}~${md(ipo.sub_end)}`,
         onclick: () => select(seg.b.no),
       }, label));
     }
@@ -124,7 +124,8 @@ function listRow(ipo, { big, applied } = {}) {
   // Applied rows: the stock name leads, the sell day (listing date) is the second line; the subscription period is left out.
   // A today/tomorrow note (오늘 마감, 내일 상장 ...) comes first; for applied rows a listing note takes the place of the date.
   const ds = dayStatus(ipo, kstToday());
-  const rest = big ? `${ds && ds.endsWith('상장') ? '' : `${listingLabel(ipo)} · `}시초가 매도`
+  const rest = ipo.withdrawn && big ? '청약 철회 · 상장 취소'
+    : big ? `${ds && ds.endsWith('상장') ? '' : `${listingLabel(ipo)} · `}시초가 매도`
     : (listed || !ipo.listing_date ? sub : `${sub} · ${listingLabel(ipo)}`);
   const title = `${applied ? '✓ ' : ''}${ipo.name}`;
   return h('button', { class: 'row', type: 'button', onclick: () => select(ipo.no) },
@@ -209,7 +210,7 @@ function alarmNodes(ipo) {
 }
 
 function appliedNodes(ipo) {
-  if (!state.canApply || ipo.first_close != null) return [];
+  if (!state.canApply || ipo.first_close != null || ipo.withdrawn) return [];
   const on = state.applied.has(ipo.no);
   return [h('button', {
     class: 'btn-large', type: 'button', 'aria-pressed': on ? 'true' : 'false',
@@ -231,7 +232,7 @@ function appliedNodes(ipo) {
 }
 
 function brokerNodes(ipo) {
-  if (!showBrokerButtons(ipo, kstToday())) return [];
+  if (ipo.withdrawn || !showBrokerButtons(ipo, kstToday())) return [];
   if (!isAndroid(navigator.userAgent)) {
     return [];
   }

@@ -32,6 +32,7 @@ export function barsForMonth(ipos, year, month) {
     flagCount: i.flag_count ?? 0,
     isSpac: !!i.is_spac,
     hasResult: i.inst_competition != null,
+    withdrawn: !!i.withdrawn,
   }));
 }
 
@@ -40,6 +41,7 @@ export function listForMonth(ipos, year, month) {
 }
 
 export function badgeInfo(ipo) {
+  if (ipo.withdrawn) return { text: '철회', tone: 'done' };  // the offering was called off: grey, nothing else applies
   if (ipo.is_spac) return { text: '스팩', tone: 'spac' };
   if (ipo.first_close != null && ipo.final_price) {  // already listed: what actually happened beats any signal
     const r = ipo.first_close / ipo.final_price - 1;
@@ -130,7 +132,7 @@ export function parseRoute(hash, ipos) {
 // The data has no closing time, so on the deadline day itself (sub_end === today) a stock still counts as running.
 export function groupForList(ipos, year, month, todayIso, applied) {
   const waiting = i => applied.has(i.no) && i.first_close == null;
-  const running = i => i.first_close == null && i.sub_end >= todayIso;
+  const running = i => i.first_close == null && i.sub_end >= todayIso && !i.withdrawn;  // a withdrawn offering is never "running"
   const mine = ipos.filter(waiting)
     .sort((a, b) => (a.listing_date || '9999').localeCompare(b.listing_date || '9999') || a.no - b.no);
   const rest = listForMonth(ipos, year, month).filter(i => !waiting(i));
@@ -183,7 +185,7 @@ export function listingAlarms(ipos, applied, nowIso) {
   const now = Date.parse(nowIso);
   if (Number.isNaN(now)) return [];
   return ipos
-    .filter(i => applied.has(i.no) && /^\d{4}-\d{2}-\d{2}$/.test(i.listing_date || ''))
+    .filter(i => applied.has(i.no) && !i.withdrawn && /^\d{4}-\d{2}-\d{2}$/.test(i.listing_date || ''))
     .map(i => ({ ipo: i, at: `${i.listing_date}T08:30:00+09:00` }))
     .filter(x => Date.parse(x.at) > now)
     .sort((a, b) => a.at.localeCompare(b.at) || a.ipo.no - b.ipo.no)
@@ -197,7 +199,7 @@ export function listingAlarms(ipos, applied, nowIso) {
 // Text of a calendar bar: the name, "⚠ " in front for a risk stock, "✓ " in front of that when marked as applied.
 // State words (대기 중, 스팩, 경고, 결과 %, 신호 개수) stay out of the bar: the colour and the list below already say them.
 // A continuation piece that is one day wide (the bar began in an earlier week) is too narrow for text: colour only.
-export function barLabel({ name, risk, applied, continuationOneDay }) {
+export function barLabel({ name, risk, applied, continuationOneDay }) {  // a withdrawn stock is shown by tone (grey) and strikethrough, not by words
   if (continuationOneDay) return '';
   return `${applied ? '✓ ' : ''}${risk ? '⚠ ' : ''}${name}`;
 }
@@ -214,7 +216,7 @@ export function markToast({ native, alarmOff, hasAlarm, hasListingDate }) {
 // A "today / tomorrow" note for a stock, by KST date strings (YYYY-MM-DD). Priority: listing today, listing tomorrow,
 // last subscription day, first subscription day. Anything else (and already listed stocks): null.
 export function dayStatus(ipo, todayIso) {
-  if (ipo.first_close != null) return null;
+  if (ipo.first_close != null || ipo.withdrawn) return null;
   const t = Date.parse(`${todayIso}T00:00:00Z`);
   if (Number.isNaN(t)) return null;
   const tomorrow = new Date(t + 86400000).toISOString().slice(0, 10);
@@ -230,7 +232,7 @@ export function dayStatus(ipo, todayIso) {
 export function listingMarks(ipos, applied, year, month) {
   const [first, last] = bounds(year, month);
   return ipos
-    .filter(i => applied.has(i.no) && i.listing_date && i.listing_date >= first && i.listing_date <= last)
+    .filter(i => applied.has(i.no) && !i.withdrawn && i.listing_date && i.listing_date >= first && i.listing_date <= last)
     .map(i => ({ no: i.no, name: i.name, date: i.listing_date, listed: i.first_close != null }))
     .sort((a, b) => a.date.localeCompare(b.date) || a.no - b.no);
 }
@@ -239,7 +241,7 @@ export function listingMarks(ipos, applied, year, month) {
 // today, KST date strings) or a stock that has listed is "done" (grey: past). A stock still to come is red when it has a
 // decline warning (the deadline day itself still counts as coming) and blue (empty class) otherwise.
 export function barTone(ipo, todayIso) {
-  if (ipo.first_close != null || (ipo.sub_end && ipo.sub_end < todayIso)) return 'done';
+  if (ipo.withdrawn || ipo.first_close != null || (ipo.sub_end && ipo.sub_end < todayIso)) return 'done';
   return badgeInfo(ipo).tone === 'risk' ? 'risk' : '';
 }
 
@@ -392,6 +394,7 @@ function judgmentShift(ipo) {
 
 // The verdict header: kind 'warn' (red box), 'ok' (plain line), 'wait' (no demand forecast yet); null for listed stocks and spacs.
 export function verdictHeader(ipo) {
+  if (ipo.withdrawn) return { kind: 'wait', title: '청약이 철회됐어요', why: '', trust: null, conflict: false, shift: null };
   if (ipo.is_spac || ipo.first_close != null) return null;
   const conflict = !ipo.warning && !!(ipo.prediction || {}).conflict;
   if (ipo.inst_competition == null) return { kind: 'wait', title: '기관 수요예측 결과가 아직 없어요', why: '', trust: null, conflict: false, shift: null };
@@ -424,7 +427,8 @@ export function factGrid(ipo, todayIso) {
 
   const ds = dayStatus(ipo, todayIso);
   let sub = '예정';
-  if (ds) sub = ds;
+  if (ipo.withdrawn) sub = '철회됨';
+  else if (ds) sub = ds;
   else if (ipo.sub_end && ipo.sub_end < todayIso) sub = '마감됨';
   else if (ipo.sub_start && ipo.sub_start <= todayIso) sub = '청약 중';
   const period = ipo.sub_start && ipo.sub_end ? `${monthDay(ipo.sub_start)}~${monthDay(ipo.sub_end)}` : null;
@@ -451,8 +455,9 @@ export function resultGrid(ipo) {
 const addDays = (iso, n) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 
 // The rows under the title: what is on today, the next subscriptions, my next listing day. Independent of the month shown.
-// A row is {k, v, sub, more, no, muted}: `no` is the stock the row opens (null: not a button).
+// A row is {k, v, sub, more, no, muted}: `no` is the stock the row opens (null: not a button). Withdrawn stocks are left out.
 export function todayStrip(ipos, applied, todayIso) {
+  const live = ipos.filter(i => !i.withdrawn);
   const rows = [];
 
   const todayRank = i => {
@@ -463,13 +468,13 @@ export function todayStrip(ipos, applied, todayIso) {
     return 0;
   };
   const SUB = { 3: '오늘 상장', 2: '오늘 마감', 1: '오늘 청약 시작' };
-  const todays = ipos.filter(i => todayRank(i) > 0)
+  const todays = live.filter(i => todayRank(i) > 0)
     .sort((a, b) => todayRank(b) - todayRank(a) || a.no - b.no);
   if (todays.length) {
     rows.push({ k: '오늘', v: todays[0].name, sub: SUB[todayRank(todays[0])], more: todays.length > 1 ? `외 ${todays.length - 1}건` : '', no: todays[0].no, muted: false });
   }
 
-  const upcoming = ipos.filter(i => i.sub_start && i.sub_start > todayIso)
+  const upcoming = live.filter(i => i.sub_start && i.sub_start > todayIso)
     .sort((a, b) => a.sub_start.localeCompare(b.sub_start) || a.no - b.no);
   if (upcoming.length) {
     const first = upcoming[0];
@@ -479,7 +484,7 @@ export function todayStrip(ipos, applied, todayIso) {
       more: group.length > 1 ? `외 ${group.length - 1}건, ${monthDay(lastEnd)}까지` : '', no: first.no, muted: false });
   }
 
-  const waiting = ipos.filter(i => applied.has(i.no) && i.first_close == null);
+  const waiting = live.filter(i => applied.has(i.no) && i.first_close == null);
   const dated = waiting.filter(i => i.listing_date && i.listing_date >= todayIso)
     .sort((a, b) => a.listing_date.localeCompare(b.listing_date) || a.no - b.no);
   if (!waiting.length) rows.push({ k: '내 상장일', v: '신청 표시한 종목이 없어요', sub: '', more: '', no: null, muted: true });
