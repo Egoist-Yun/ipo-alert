@@ -24,6 +24,7 @@ from ipo.parse import is_missing_page
 from ipo.signals import score
 
 CALENDAR_DAYS_BACK = 90
+MAX_VANISHED = 3  # more unchecked stocks than this gone from the lists at once: a site problem, not withdrawals
 RESELECT_EVERY = 20  # re-run variable selection after this many new listings
 
 
@@ -86,40 +87,61 @@ def _build(data_dir: Path, now_kst: datetime, fetch, failures: list | None = Non
     return sorted(out, key=lambda i: (i.sub_start, i.no))
 
 
-def _previous_ipos(data_dir: Path) -> list[Ipo]:
-    """The stocks of the last run (data/ipos.json), read before this run overwrites it. Missing or broken: none (logged)."""
+def _previous_ipos(data_dir: Path, failures: list) -> list[Ipo]:
+    """The stocks of the last run (data/ipos.json), read before this run overwrites it, row by row: a broken row is skipped
+    and reported in `failures`, a file that cannot be read at all is reported once. No file: none, silently (first run)."""
     path = data_dir / "ipos.json"
     if not path.exists():
         return []
     try:
-        names = {f.name for f in fields(Ipo)}
-        return [Ipo(**{k: v for k, v in d.items() if k in names}) for d in json.loads(path.read_text(encoding="utf-8"))["ipos"]]
-    except Exception:
+        rows = json.loads(path.read_text(encoding="utf-8"))["ipos"]
+        if not isinstance(rows, list):
+            raise ValueError("ipos is not a list")
+    except Exception as e:
         traceback.print_exc()
+        failures.append({"no": 0, "name": "data/ipos.json", "error": f"{type(e).__name__}: {e}"})
         return []
+    names = {f.name for f in fields(Ipo)}
+    out = []
+    for d in rows:
+        try:
+            out.append(Ipo(**{k: v for k, v in d.items() if k in names}))
+        except Exception:
+            traceback.print_exc()
+            row = d if isinstance(d, dict) else {}
+            failures.append({"no": row.get("no", 0), "name": row.get("name", "?"), "error": "이전 데이터 읽기 실패"})
+    return out
 
 
 def _carry_withdrawn(previous: list[Ipo], current: list[Ipo], now_kst: datetime, fetch, failures: list) -> list[Ipo]:
     """A stock that was on the calendar but is in no list any more (and has not listed, listing day not past) is either
     called off - its detail page answers "no such information" - or something else went wrong. Called off: it stays on the
-    calendar marked `withdrawn` (checked once, then carried without asking again). Anything else is a reported failure."""
+    calendar marked `withdrawn` (checked once, then carried without asking again). Anything not confirmed is reported in
+    `failures` and the stock is kept as it was, to be checked again next run. More than MAX_VANISHED unchecked stocks gone
+    at once looks like a site problem, not many withdrawals: none is opened."""
     today = now_kst.date().isoformat()
     cutoff = (now_kst.date() - timedelta(days=CALENDAR_DAYS_BACK)).isoformat()
     here = {i.no for i in current}
+    gone = [old for old in previous
+            if old.no not in here and old.first_close is None and not (old.listing_date and old.listing_date < today)]
+    unchecked = [old for old in gone if not old.withdrawn]
+    mass = len(unchecked) > MAX_VANISHED
     carried = []
-    for old in previous:
-        if old.no in here or old.first_close is not None or (old.listing_date and old.listing_date < today):
-            continue
+    for old in gone:
         if not old.withdrawn:
-            try:
-                gone = is_missing_page(fetch(detail_url(old.no)))
-            except FetchError as e:
-                failures.append(detail_failure(old.no, old.name, e))
-                continue
-            if not gone:
-                failures.append({"no": old.no, "name": old.name, "error": "목록에서 사라짐"})
-                continue
-            old = replace(old, withdrawn=today, warning=None)
+            if mass:
+                failures.append({"no": old.no, "name": old.name, "error": f"목록에서 한꺼번에 사라짐({len(unchecked)}개)"})
+            else:
+                try:
+                    missing = is_missing_page(fetch(detail_url(old.no)))
+                except FetchError as e:
+                    failures.append(detail_failure(old.no, old.name, e))
+                    missing = False
+                else:
+                    if not missing:
+                        failures.append({"no": old.no, "name": old.name, "error": "목록에서 사라짐"})
+                if missing:
+                    old = replace(old, withdrawn=today, warning=None, warning_pre=None, prediction=None, patterns=[])
         if old.sub_start and old.sub_start >= cutoff:
             carried.append(old)
     return carried
@@ -229,7 +251,7 @@ def run(data_dir: Path, topic: str | None, site_url: str, now_kst: datetime,
     try:
         raw_failures: list = []
         ledger_errors: list = []
-        previous = _previous_ipos(data_dir)  # read before anything is overwritten
+        previous = _previous_ipos(data_dir, raw_failures)  # read before anything is overwritten
         ipos = _build(data_dir, now_kst, fetch, raw_failures)
         ipos = sorted(ipos + _carry_withdrawn(previous, ipos, now_kst, fetch, raw_failures), key=lambda i: (i.sub_start or "", i.no))
         failures = list({f["no"]: f for f in raw_failures}.values())  # a stock can fail in both the history and the current pass

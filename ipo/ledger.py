@@ -84,6 +84,8 @@ def fill_results(ledger: dict, ipos: list[Ipo], now: datetime) -> int:
     filled = 0
     for ipo in ipos:
         entry = ledger.get(str(ipo.no))
+        if entry and not ipo.withdrawn and entry.get("withdrawn"):
+            entry.pop("withdrawn")  # it came back: it counts again
         if entry and ipo.withdrawn and not entry.get("withdrawn"):
             entry["withdrawn"] = ipo.withdrawn  # called off: it will never have a result, so it is no longer "pending"
             continue

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { monthGrid, barsForMonth, listForMonth, needsRefresh, splitSegments, signalRows, evidenceLine, trustText, verdictHeader, factGrid, resultGrid, todayStrip, pastWeeks, countBarsIn } from './calendar.js';
+import { monthGrid, barsForMonth, listForMonth, needsRefresh, splitSegments, signalRows, evidenceLine, trustText, verdictHeader, factGrid, resultGrid, todayStrip, pastWeeks, countBarsIn, showApplyButton } from './calendar.js';
 
 const A = { no: 77, name: 'A', sub_start: '2026-11-27', sub_end: '2026-11-30', flag_count: 2, is_spac: false };
 
@@ -895,4 +895,11 @@ test('withdrawn: list groups, alarms and listing marks', () => {
   assert.deepEqual(listingAlarms(ipos, new Set([7, 8]), '2026-11-20T00:00:00Z'), []);
   assert.deepEqual(listingMarks(ipos, new Set([7]), 2026, 12), []);
   assert.equal(barLabel({ name: '철회주', risk: false, applied: false, withdrawn: true }), '철회주');
+});
+
+test('showApplyButton: a withdrawn stock offers the button only to take the mark off; a listed one never', () => {
+  assert.equal(showApplyButton(S(1, 'x'), new Set()), true);
+  assert.equal(showApplyButton(WD, new Set()), false);
+  assert.equal(showApplyButton(WD, new Set([7])), true);
+  assert.equal(showApplyButton(S(2, 'y', { first_close: 5000 }), new Set([2])), false);
 });

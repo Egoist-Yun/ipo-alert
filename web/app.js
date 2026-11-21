@@ -1,4 +1,4 @@
-import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, recordRows, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks, barTone, offerInfoRows, layoutWeek, splitSegments, signalRows, verdictHeader, factGrid, resultGrid, todayStrip, pastWeeks, countBarsIn } from './calendar.js';
+import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, recordRows, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks, barTone, offerInfoRows, layoutWeek, splitSegments, signalRows, verdictHeader, factGrid, resultGrid, todayStrip, pastWeeks, countBarsIn, showApplyButton } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
@@ -62,7 +62,7 @@ function renderCalendar() {
   if (past.count) {
     const n = countBarsIn(bars, past.from, past.to);
     const fold = h('button', { class: `past${state.pastOpen ? ' open' : ''}`, type: 'button', 'aria-expanded': state.pastOpen ? 'true' : 'false',
-      onclick: () => { state.pastOpen = !state.pastOpen; renderCalendar(); } },
+      onclick: () => { state.pastOpen = !state.pastOpen; renderCalendar(); $('weeks').querySelector('.past')?.focus(); } },
       h('span', {}, `${md(past.from)}~${md(past.to)} 지난 청약 `, h('b', {}, `${n}건`)));
     weeks.append(fold);
   }
@@ -210,7 +210,7 @@ function alarmNodes(ipo) {
 }
 
 function appliedNodes(ipo) {
-  if (!state.canApply || ipo.first_close != null || ipo.withdrawn) return [];
+  if (!state.canApply || !showApplyButton(ipo, state.applied)) return [];
   const on = state.applied.has(ipo.no);
   return [h('button', {
     class: 'btn-large', type: 'button', 'aria-pressed': on ? 'true' : 'false',
@@ -288,7 +288,7 @@ function renderDetail() {
   const offerRows = offerInfoRows(ipo);
   if (offerRows.length) nodes.push(h('details', { class: 'drop' }, h('summary', {}, h('span', {}, '공모 정보')), offerRows.map(r => kv(r.k, r.v))));
 
-  if (!ipo.is_spac && ipo.inst_competition != null) {
+  if (!ipo.is_spac && !ipo.withdrawn && ipo.inst_competition != null) {
     nodes.push(...signalNodes(ipo));
     nodes.push(...patternNodes(ipo));
     if (!listed) nodes.push(...modelNodes(ipo));

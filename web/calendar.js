@@ -181,6 +181,12 @@ export function toggleApplied(set, no) {
 
 // Local alarm for each stock the user marked as applied: 08:30 KST on its listing day (pre-market orders open then).
 // Pure: the app schedules exactly this list and cancels anything else it had scheduled.
+// Whether the detail screen offers the apply/unapply button: not for a listed stock; a withdrawn stock only to take the mark off.
+export function showApplyButton(ipo, applied) {
+  if (ipo.first_close != null) return false;
+  return !ipo.withdrawn || applied.has(ipo.no);
+}
+
 export function listingAlarms(ipos, applied, nowIso) {
   const now = Date.parse(nowIso);
   if (Number.isNaN(now)) return [];
@@ -296,7 +302,7 @@ export function offerInfoRows(ipo) {
 // Lays out one week of the subscription calendar: bars (multi-day) and the one-day listing marks of the stocks I applied for.
 // Every lane keeps a 7-cell occupancy row. Bars go first, in start-day order, into the topmost lane where all their cells are
 // free (the same result as the older "last column per lane" rule). Then each mark takes the topmost lane whose day cell is free
-// (a new lane if none). A mark stays inside its own day cell: stretching it over the cells to its right looked like a period.
+// (a new lane if none), then runs right over the free cells of that lane, up to the day before the next mark's day.
 export function layoutWeek(barSegs, markSegs) {
   const lanes = [];
   const newLane = () => { lanes.push(Array(7).fill(false)); return lanes.length - 1; };
