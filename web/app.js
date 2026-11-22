@@ -141,7 +141,7 @@ function renderList() {
     parts.push(h('section', { class: 'group' }, h('h3', {}, `신청한 청약 · ${g.applied.length}개`), g.applied.map(i => listRow(i, { big: true }))));
   }
   if (g.upcoming.length) {
-    parts.push(h('section', { class: 'group' }, h('h3', {}, `청약 예정·진행 중 · ${g.upcoming.length}개`), g.upcoming.map(i => listRow(i))));
+    parts.push(h('section', { class: 'group' }, h('h3', {}, `다가오는 청약 · ${g.upcoming.length}개`), g.upcoming.map(i => listRow(i))));
   }
   if (g.done.length) {
     // Closed on every app start; opening it keeps it open only while the app stays open (month changes, back from a detail).
@@ -151,7 +151,7 @@ function renderList() {
     box.addEventListener('toggle', () => { state.doneOpen = box.open; });
     parts.push(box);
   }
-  if (!g.upcoming.length && !g.done.length) parts.push(h('p', { class: 'msg' }, `${state.month}월에는 청약이 없어요.`));
+  if (!g.upcoming.length && !g.done.length) parts.push(h('p', { class: 'msg' }, '30일 안에 청약이 없어요.'));
   $('list').replaceChildren(...parts);
 }
 

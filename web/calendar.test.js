@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { monthGrid, barsForMonth, listForMonth, needsRefresh, splitSegments, signalRows, evidenceLine, trustText, verdictHeader, factGrid, resultGrid, todayStrip, pastWeeks, countBarsIn, showApplyButton, pushPanelState, pushTargetNo, countMarksIn } from './calendar.js';
+import { monthGrid, barsForMonth, listForMonth, needsRefresh, splitSegments, signalRows, evidenceLine, trustText, verdictHeader, factGrid, resultGrid, todayStrip, pastWeeks, countBarsIn, showApplyButton, pushPanelState, pushTargetNo, countMarksIn, UPCOMING_DAYS } from './calendar.js';
 
 const A = { no: 77, name: 'A', sub_start: '2026-11-27', sub_end: '2026-11-30', flag_count: 2, is_spac: false };
 
@@ -825,39 +825,37 @@ test('todayStrip 오늘: the first of listing today > last day > first day, with
   assert.equal(todayStrip([S(1, 'x', { sub_start: '2026-11-25', sub_end: '2026-11-26' })], new Set(), STRIP_TODAY).find(x => x.k === '오늘'), undefined);   // no row without a stock
 });
 
-test('todayStrip 다음 청약: stocks starting within 7 days of the earliest start, "외 N건, M/D까지" the latest end among them', () => {
-  const ipos = [
-    S(1, '가', { sub_start: '2026-11-23', sub_end: '2026-11-24' }),
-    S(2, '나', { sub_start: '2026-11-30', sub_end: '2026-12-01' }),    // 7 days after the earliest: in
-    S(3, '다', { sub_start: '2026-12-01', sub_end: '2026-12-02' }),    // 8 days: out
-  ];
-  const r = todayStrip(ipos, new Set(), STRIP_TODAY).find(x => x.k === '다음 청약');
-  assert.deepEqual([r.v, r.more, r.no], ['11/23 가', '외 1건, 12/1까지', 1]);
-  const single = todayStrip([ipos[0]], new Set(), STRIP_TODAY).find(x => x.k === '다음 청약');
-  assert.deepEqual([single.v, single.more], ['11/23 가', '']);
-  assert.equal(todayStrip([S(9, '지난', { sub_start: '2026-11-10', sub_end: '2026-11-11' })], new Set(), STRIP_TODAY).find(x => x.k === '다음 청약'), undefined);
-  assert.equal(todayStrip([S(9, '오늘시작', { sub_start: STRIP_TODAY, sub_end: '2026-11-21' })], new Set(), STRIP_TODAY).find(x => x.k === '다음 청약'), undefined);   // today is not "next"
+test('todayStrip: there is no "다음 청약" row any more (the first group of the list says it)', () => {
+  const ipos = [S(1, '가', { sub_start: '2026-11-23', sub_end: '2026-11-24' })];
+  assert.deepEqual(todayStrip(ipos, new Set(), STRIP_TODAY), []);
 });
 
-test('todayStrip 내 상장일: the earliest listing day of what I applied for; undated and none have their own wording', () => {
+test('todayStrip 내 상장일: the earliest listing day of what I applied for; undated has its own wording; no applied stock: no row', () => {
   const ipos = [
     S(1, '가', { listing_date: '2026-12-02' }), S(2, '나', { listing_date: '2026-11-27' }), S(3, '다', { listing_date: null }),
     S(4, '이미', { listing_date: '2026-11-12', first_close: 5000 }), S(5, '미신청', { listing_date: '2026-11-25' }),
   ];
   const mine = r => r.find(x => x.k === '내 상장일');
-  assert.deepEqual([mine(todayStrip(ipos, new Set([1, 2, 3, 4]), STRIP_TODAY)).v, mine(todayStrip(ipos, new Set([1, 2, 3, 4]), STRIP_TODAY)).more], ['11/27 나', '외 1건']);
+  const r = mine(todayStrip(ipos, new Set([1, 2, 3, 4]), STRIP_TODAY));
+  assert.deepEqual([r.v, r.more, r.sub, r.risk], ['11/27 나', '외 1건', '', false]);
   assert.equal(mine(todayStrip(ipos, new Set([3]), STRIP_TODAY)).v, '상장일 미정');
-  const none = mine(todayStrip(ipos, new Set(), STRIP_TODAY));
-  assert.deepEqual([none.v, none.muted, none.no], ['신청 표시한 종목이 없어요', true, null]);
-  assert.equal(mine(todayStrip(ipos, new Set([4]), STRIP_TODAY)).muted, true);      // applied but already listed: nothing waiting
+  assert.deepEqual(todayStrip(ipos, new Set(), STRIP_TODAY), []);                     // no applied stock: no row, no strip
+  assert.equal(mine(todayStrip(ipos, new Set([4]), STRIP_TODAY)), undefined);          // applied but already listed: nothing waiting
+});
+
+test('todayStrip 내 상장일: a decline warning among the applied stocks is counted in red in the sub text; the order stays by date', () => {
+  const warn = { warning: 'strong', inst_competition: 900 };
+  const ipos = [S(1, '가', { listing_date: '2026-11-27' }), S(2, '나', { listing_date: '2026-11-30', ...warn }), S(3, '다', { listing_date: '2026-12-01', ...warn })];
+  const r = todayStrip(ipos, new Set([1, 2, 3]), STRIP_TODAY).find(x => x.k === '내 상장일');
+  assert.deepEqual([r.v, r.sub, r.risk, r.more], ['11/27 가', '⚠ 하락 경고 2건', true, '외 2건']);
+  const listed = todayStrip([S(2, '나', { listing_date: '2026-11-30', first_close: 5000, final_price: 4000, ...warn }), ipos[0]], new Set([1, 2]), STRIP_TODAY)[0];
+  assert.equal(listed.risk, false);                                                    // an already listed stock is not a warning
 });
 
 test('todayStrip: withdrawn stocks appear in no row', () => {
   const w = S(1, '철회', { withdrawn: '2026-11-20', sub_start: STRIP_TODAY, sub_end: '2026-11-21', listing_date: '2026-12-02' });
   const rows = todayStrip([w, S(2, '다음', { sub_start: '2026-11-23', sub_end: '2026-11-24' })], new Set([1]), STRIP_TODAY);
-  assert.equal(rows.find(x => x.k === '오늘'), undefined);
-  assert.equal(rows.find(x => x.k === '다음 청약').v, '11/23 다음');
-  assert.equal(rows.find(x => x.k === '내 상장일').muted, true);
+  assert.deepEqual(rows, []);
 });
 
 test('pastWeeks: the weeks of the shown month that end before today, only in the month that contains today', () => {
@@ -918,15 +916,6 @@ test('pushTargetNo: the stock number after the # of the push link, else null', (
   for (const bad of ['', null, undefined, 'https://s/', 'https://s/#record', 'https://s/#12x']) assert.equal(pushTargetNo(bad), null);
 });
 
-test('todayStrip 내 상장일: a decline warning among the applied stocks is counted in red in the sub text; the order stays by date', () => {
-  const warn = { warning: 'strong', inst_competition: 900 };
-  const ipos = [S(1, '가', { listing_date: '2026-11-27' }), S(2, '나', { listing_date: '2026-11-30', ...warn }), S(3, '다', { listing_date: '2026-12-01', ...warn })];
-  const r = todayStrip(ipos, new Set([1, 2, 3]), STRIP_TODAY).find(x => x.k === '내 상장일');
-  assert.deepEqual([r.v, r.sub, r.risk, r.more], ['11/27 가', '⚠ 하락 경고 2건', true, '외 2건']);
-  const listed = todayStrip([S(2, '나', { listing_date: '2026-11-30', first_close: 5000, final_price: 4000, ...warn }), ipos[0]], new Set([1, 2]), STRIP_TODAY)[0];
-  assert.equal(listed.risk, false);                                                    // an already listed stock is not a warning
-});
-
 test('listingMarks: risk is true for a not-yet-listed stock with a decline warning, false for a listed or a plain one', () => {
   const base = { first_close: null, listing_date: '2026-11-26', inst_competition: 900 };
   const marks = listingMarks([
@@ -934,6 +923,27 @@ test('listingMarks: risk is true for a not-yet-listed stock with a decline warni
     { no: 3, name: 'c', ...base, warning: 'strong', first_close: 5000, final_price: 4000, listing_date: '2026-11-10' },
   ], new Set([1, 2, 3]), 2026, 11);
   assert.deepEqual(marks.map(m => [m.no, m.risk]), [[3, false], [1, true], [2, false]]);
+});
+
+test('groupForList upcoming: the same for every shown month, from today to 30 days ahead, running stocks included', () => {
+  const T = '2026-11-18';
+  const ipos = [
+    mk(1, '2026-11-16', '2026-11-18'),                       // deadline today: running
+    mk(2, '2026-12-18', '2026-12-19'),                       // exactly 30 days ahead: in
+    mk(3, '2026-12-19', '2026-12-20'),                       // 31 days: out
+    mk(4, '2026-12-02', '2026-12-03'), mk(5, '2026-11-17', '2026-11-17'),   // 5 is over
+  ];
+  const up = (y, m) => nos(groupForList(ipos, y, m, T, new Set()).upcoming);
+  assert.equal(UPCOMING_DAYS, 30);
+  assert.deepEqual(up(2026, 11), [1, 4, 2]);
+  assert.deepEqual(up(2026, 12), [1, 4, 2]);
+  assert.deepEqual(up(2027, 5), [1, 4, 2]);
+});
+
+test('groupForList upcoming: applied and withdrawn stocks stay out', () => {
+  const T = '2026-11-18';
+  const ipos = [mk(1, '2026-11-20', '2026-11-21'), mk(2, '2026-11-20', '2026-11-21', { withdrawn: '2026-11-19' }), mk(3, '2026-11-22', '2026-11-23')];
+  assert.deepEqual(nos(groupForList(ipos, 2026, 11, T, new Set([1])).upcoming), [3]);
 });
 
 test('countMarksIn: my listing marks inside a date range', () => {

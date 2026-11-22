@@ -128,17 +128,21 @@ export function parseRoute(hash, ipos) {
 }
 
 // The list screen's groups. `applied` (the user marked a subscription and the stock has not listed yet) ignores the shown month.
-// `upcoming` = shown month, not applied, subscription not over; `done` = shown month, subscription over or already listed.
+// `upcoming` = not applied, not withdrawn, subscription not over and starting within UPCOMING_DAYS of today (or already running),
+// whatever month is shown; `done` = shown month, subscription over, already listed or withdrawn.
 // The data has no closing time, so on the deadline day itself (sub_end === today) a stock still counts as running.
+export const UPCOMING_DAYS = 30;
 export function groupForList(ipos, year, month, todayIso, applied) {
   const waiting = i => applied.has(i.no) && i.first_close == null;
   const running = i => i.first_close == null && i.sub_end >= todayIso && !i.withdrawn;  // a withdrawn offering is never "running"
   const mine = ipos.filter(waiting)
     .sort((a, b) => (a.listing_date || '9999').localeCompare(b.listing_date || '9999') || a.no - b.no);
   const rest = listForMonth(ipos, year, month).filter(i => !waiting(i));
+  const horizon = addDays(todayIso, UPCOMING_DAYS);
   return {
     applied: mine,
-    upcoming: rest.filter(running),
+    upcoming: ipos.filter(i => !waiting(i) && running(i) && i.sub_start && i.sub_start <= horizon)
+      .sort((a, b) => a.sub_start.localeCompare(b.sub_start) || a.no - b.no),
     done: rest.filter(i => !running(i)).sort((a, b) => b.sub_end.localeCompare(a.sub_end) || b.no - a.no),
   };
 }
@@ -460,7 +464,7 @@ export function resultGrid(ipo) {
 // ---- Today strip, folded past weeks ----
 const addDays = (iso, n) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 
-// The rows under the title: what is on today, the next subscriptions, my next listing day. Independent of the month shown.
+// The rows under the title: what is on today and my next listing day (with a decline-warning count in red). Independent of the month shown.
 // A row is {k, v, sub, risk, more, no, muted} (`risk`: the sub text is a warning, drawn red): `no` is the stock the row opens (null: not a button). Withdrawn stocks are left out.
 export function todayStrip(ipos, applied, todayIso) {
   const live = ipos.filter(i => !i.withdrawn);
@@ -480,26 +484,15 @@ export function todayStrip(ipos, applied, todayIso) {
     rows.push({ k: '오늘', v: todays[0].name, sub: SUB[todayRank(todays[0])], risk: false, more: todays.length > 1 ? `외 ${todays.length - 1}건` : '', no: todays[0].no, muted: false });
   }
 
-  const upcoming = live.filter(i => i.sub_start && i.sub_start > todayIso)
-    .sort((a, b) => a.sub_start.localeCompare(b.sub_start) || a.no - b.no);
-  if (upcoming.length) {
-    const first = upcoming[0];
-    const group = upcoming.filter(i => i.sub_start <= addDays(first.sub_start, 7));
-    const lastEnd = group.map(i => i.sub_end || i.sub_start).sort().pop();
-    rows.push({ k: '다음 청약', v: `${monthDay(first.sub_start)} ${first.name}`, sub: '',
-      more: group.length > 1 ? `외 ${group.length - 1}건, ${monthDay(lastEnd)}까지` : '', no: first.no, muted: false });
-  }
-
   const waiting = live.filter(i => applied.has(i.no) && i.first_close == null);
   const dated = waiting.filter(i => i.listing_date && i.listing_date >= todayIso)
     .sort((a, b) => a.listing_date.localeCompare(b.listing_date) || a.no - b.no);
-  if (!waiting.length) rows.push({ k: '내 상장일', v: '신청 표시한 종목이 없어요', sub: '', risk: false, more: '', no: null, muted: true });
-  else if (!dated.length) rows.push({ k: '내 상장일', v: '상장일 미정', sub: '', risk: false, more: '', no: waiting[0].no, muted: true });
-  else {
-    const risky = dated.filter(i => badgeInfo(i).tone === 'risk').length;   // a decline warning must stay visible on the day of selling
-    rows.push({ k: '내 상장일', v: `${monthDay(dated[0].listing_date)} ${dated[0].name}`, sub: risky ? `⚠ 하락 경고 ${risky}건` : '', risk: risky > 0,
-      more: dated.length > 1 ? `외 ${dated.length - 1}건` : '', no: dated[0].no, muted: false });
-  }
+  const risky = dated.filter(i => badgeInfo(i).tone === 'risk').length;
+  // No applied stock: no row (the list's first group already says what is coming).
+  if (!waiting.length) return rows;
+  if (!dated.length) rows.push({ k: '내 상장일', v: '상장일 미정', sub: '', risk: false, more: '', no: waiting[0].no, muted: true });
+  else rows.push({ k: '내 상장일', v: `${monthDay(dated[0].listing_date)} ${dated[0].name}`, sub: risky ? `⚠ 하락 경고 ${risky}건` : '', risk: risky > 0,
+    more: dated.length > 1 ? `외 ${dated.length - 1}건` : '', no: dated[0].no, muted: false });
   return rows;
 }
 
