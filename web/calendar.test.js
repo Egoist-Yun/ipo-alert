@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { monthGrid, barsForMonth, listForMonth, needsRefresh, splitSegments, signalRows, evidenceLine, trustText, verdictHeader, factGrid, resultGrid, todayStrip, pastWeeks, countBarsIn, showApplyButton, pushPanelState, pushTargetNo } from './calendar.js';
+import { monthGrid, barsForMonth, listForMonth, needsRefresh, splitSegments, signalRows, evidenceLine, trustText, verdictHeader, factGrid, resultGrid, todayStrip, pastWeeks, countBarsIn, showApplyButton, pushPanelState, pushTargetNo, countMarksIn } from './calendar.js';
 
 const A = { no: 77, name: 'A', sub_start: '2026-11-27', sub_end: '2026-11-30', flag_count: 2, is_spac: false };
 
@@ -345,21 +345,21 @@ test('listingAlarms: a bad clock value yields nothing instead of throwing', () =
 import { barLabel } from './calendar.js';
 
 test('barLabel: a normal stock shows just its name', () => {
-  assert.equal(barLabel({ name: '유캐스트', risk: false, applied: false, continuationOneDay: false }), '유캐스트');
+  assert.equal(barLabel({ name: '유캐스트', risk: false, applied: false }), '유캐스트');
 });
 
 test('barLabel: risk adds a warning mark, applied adds a check mark in front of it', () => {
-  assert.equal(barLabel({ name: '유캐스트', risk: true, applied: false, continuationOneDay: false }), '⚠ 유캐스트');
-  assert.equal(barLabel({ name: '유캐스트', risk: true, applied: true, continuationOneDay: false }), '✓ ⚠ 유캐스트');
-  assert.equal(barLabel({ name: '유캐스트', risk: false, applied: true, continuationOneDay: false }), '✓ 유캐스트');
+  assert.equal(barLabel({ name: '유캐스트', risk: true, applied: false }), '⚠ 유캐스트');
+  assert.equal(barLabel({ name: '유캐스트', risk: true, applied: true }), '✓ ⚠ 유캐스트');
+  assert.equal(barLabel({ name: '유캐스트', risk: false, applied: true }), '✓ 유캐스트');
 });
 
-test('barLabel: a one-day continuation piece (the bar began in an earlier week) has no text', () => {
-  assert.equal(barLabel({ name: '유캐스트', risk: true, applied: true, continuationOneDay: true }), '');
+test('barLabel: a one-day continuation piece carries the name too (the bar ellipsis cuts it), same marks as any bar', () => {
+  assert.equal(barLabel({ name: '유캐스트', risk: true, applied: true, continuationOneDay: true }), '✓ ⚠ 유캐스트');   // the old argument is ignored
 });
 
 test('barLabel: a spac (not risk) is just its name, no state words', () => {
-  assert.equal(barLabel({ name: '신영스팩12호', risk: false, applied: false, continuationOneDay: false }), '신영스팩12호');
+  assert.equal(barLabel({ name: '신영스팩12호', risk: false, applied: false }), '신영스팩12호');
 });
 
 import { markToast } from './calendar.js';
@@ -449,9 +449,9 @@ test('listingMarks: month boundaries are inclusive', () => {
   assert.deepEqual(listingMarks(ipos, new Set([1, 2, 3, 4]), 2026, 11).map(m => m.no), [1, 2]);
 });
 
-test('listingMarks: a listed stock carries listed: true; the shape is {no, name, date, listed}', () => {
+test('listingMarks: a listed stock carries listed: true and no risk; the shape is {no, name, date, listed, risk}', () => {
   const [m] = listingMarks([LM(7, '2026-11-10', { first_close: 12000 })], new Set([7]), 2026, 11);
-  assert.deepEqual(m, { no: 7, name: 'S7', date: '2026-11-10', listed: true });
+  assert.deepEqual(m, { no: 7, name: 'S7', date: '2026-11-10', listed: true, risk: false });
   const [n] = listingMarks([LM(8, '2026-11-26')], new Set([8]), 2026, 11);
   assert.equal(n.listed, false);
 });
@@ -916,4 +916,28 @@ test('pushTargetNo: the stock number after the # of the push link, else null', (
   assert.equal(pushTargetNo('https://egoist-yun.github.io/ipo-alert/#2352'), 2352);
   assert.equal(pushTargetNo(' https://s/#7 '), 7);
   for (const bad of ['', null, undefined, 'https://s/', 'https://s/#record', 'https://s/#12x']) assert.equal(pushTargetNo(bad), null);
+});
+
+test('todayStrip 내 상장일: a decline warning among the applied stocks is counted in red in the sub text; the order stays by date', () => {
+  const warn = { warning: 'strong', inst_competition: 900 };
+  const ipos = [S(1, '가', { listing_date: '2026-11-27' }), S(2, '나', { listing_date: '2026-11-30', ...warn }), S(3, '다', { listing_date: '2026-12-01', ...warn })];
+  const r = todayStrip(ipos, new Set([1, 2, 3]), STRIP_TODAY).find(x => x.k === '내 상장일');
+  assert.deepEqual([r.v, r.sub, r.risk, r.more], ['11/27 가', '⚠ 하락 경고 2건', true, '외 2건']);
+  const listed = todayStrip([S(2, '나', { listing_date: '2026-11-30', first_close: 5000, final_price: 4000, ...warn }), ipos[0]], new Set([1, 2]), STRIP_TODAY)[0];
+  assert.equal(listed.risk, false);                                                    // an already listed stock is not a warning
+});
+
+test('listingMarks: risk is true for a not-yet-listed stock with a decline warning, false for a listed or a plain one', () => {
+  const base = { first_close: null, listing_date: '2026-11-26', inst_competition: 900 };
+  const marks = listingMarks([
+    { no: 1, name: 'a', ...base, warning: 'strong' }, { no: 2, name: 'b', ...base },
+    { no: 3, name: 'c', ...base, warning: 'strong', first_close: 5000, final_price: 4000, listing_date: '2026-11-10' },
+  ], new Set([1, 2, 3]), 2026, 11);
+  assert.deepEqual(marks.map(m => [m.no, m.risk]), [[3, false], [1, true], [2, false]]);
+});
+
+test('countMarksIn: my listing marks inside a date range', () => {
+  const marks = [{ no: 1, date: '2026-11-03' }, { no: 2, date: '2026-11-15' }, { no: 3, date: '2026-11-16' }];
+  assert.equal(countMarksIn(marks, '2026-11-01', '2026-11-15'), 2);
+  assert.equal(countMarksIn(marks, '2026-11-17', '2026-11-30'), 0);
 });

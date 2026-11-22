@@ -204,9 +204,8 @@ export function listingAlarms(ipos, applied, nowIso) {
 
 // Text of a calendar bar: the name, "⚠ " in front for a risk stock, "✓ " in front of that when marked as applied.
 // State words (대기 중, 스팩, 경고, 결과 %, 신호 개수) stay out of the bar: the colour and the list below already say them.
-// A continuation piece that is one day wide (the bar began in an earlier week) is too narrow for text: colour only.
-export function barLabel({ name, risk, applied, continuationOneDay }) {  // a withdrawn stock is shown by tone (grey) and strikethrough, not by words
-  if (continuationOneDay) return '';
+// A one-day continuation piece (the bar began in an earlier week) carries the name too: the bar's ellipsis cuts what does not fit.
+export function barLabel({ name, risk, applied }) {  // a withdrawn stock is shown by tone (grey) and strikethrough, not by words
   return `${applied ? '✓ ' : ''}${risk ? '⚠ ' : ''}${name}`;
 }
 
@@ -239,7 +238,8 @@ export function listingMarks(ipos, applied, year, month) {
   const [first, last] = bounds(year, month);
   return ipos
     .filter(i => applied.has(i.no) && !i.withdrawn && i.listing_date && i.listing_date >= first && i.listing_date <= last)
-    .map(i => ({ no: i.no, name: i.name, date: i.listing_date, listed: i.first_close != null }))
+    .map(i => ({ no: i.no, name: i.name, date: i.listing_date, listed: i.first_close != null,
+      risk: i.first_close == null && badgeInfo(i).tone === 'risk' }))  // a decline warning must stay visible on the day of selling
     .sort((a, b) => a.date.localeCompare(b.date) || a.no - b.no);
 }
 
@@ -461,7 +461,7 @@ export function resultGrid(ipo) {
 const addDays = (iso, n) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 
 // The rows under the title: what is on today, the next subscriptions, my next listing day. Independent of the month shown.
-// A row is {k, v, sub, more, no, muted}: `no` is the stock the row opens (null: not a button). Withdrawn stocks are left out.
+// A row is {k, v, sub, risk, more, no, muted} (`risk`: the sub text is a warning, drawn red): `no` is the stock the row opens (null: not a button). Withdrawn stocks are left out.
 export function todayStrip(ipos, applied, todayIso) {
   const live = ipos.filter(i => !i.withdrawn);
   const rows = [];
@@ -477,7 +477,7 @@ export function todayStrip(ipos, applied, todayIso) {
   const todays = live.filter(i => todayRank(i) > 0)
     .sort((a, b) => todayRank(b) - todayRank(a) || a.no - b.no);
   if (todays.length) {
-    rows.push({ k: '오늘', v: todays[0].name, sub: SUB[todayRank(todays[0])], more: todays.length > 1 ? `외 ${todays.length - 1}건` : '', no: todays[0].no, muted: false });
+    rows.push({ k: '오늘', v: todays[0].name, sub: SUB[todayRank(todays[0])], risk: false, more: todays.length > 1 ? `외 ${todays.length - 1}건` : '', no: todays[0].no, muted: false });
   }
 
   const upcoming = live.filter(i => i.sub_start && i.sub_start > todayIso)
@@ -493,9 +493,13 @@ export function todayStrip(ipos, applied, todayIso) {
   const waiting = live.filter(i => applied.has(i.no) && i.first_close == null);
   const dated = waiting.filter(i => i.listing_date && i.listing_date >= todayIso)
     .sort((a, b) => a.listing_date.localeCompare(b.listing_date) || a.no - b.no);
-  if (!waiting.length) rows.push({ k: '내 상장일', v: '신청 표시한 종목이 없어요', sub: '', more: '', no: null, muted: true });
-  else if (!dated.length) rows.push({ k: '내 상장일', v: '상장일 미정', sub: '', more: '', no: waiting[0].no, muted: true });
-  else rows.push({ k: '내 상장일', v: `${monthDay(dated[0].listing_date)} ${dated[0].name}`, sub: '', more: dated.length > 1 ? `외 ${dated.length - 1}건` : '', no: dated[0].no, muted: false });
+  if (!waiting.length) rows.push({ k: '내 상장일', v: '신청 표시한 종목이 없어요', sub: '', risk: false, more: '', no: null, muted: true });
+  else if (!dated.length) rows.push({ k: '내 상장일', v: '상장일 미정', sub: '', risk: false, more: '', no: waiting[0].no, muted: true });
+  else {
+    const risky = dated.filter(i => badgeInfo(i).tone === 'risk').length;   // a decline warning must stay visible on the day of selling
+    rows.push({ k: '내 상장일', v: `${monthDay(dated[0].listing_date)} ${dated[0].name}`, sub: risky ? `⚠ 하락 경고 ${risky}건` : '', risk: risky > 0,
+      more: dated.length > 1 ? `외 ${dated.length - 1}건` : '', no: dated[0].no, muted: false });
+  }
   return rows;
 }
 
@@ -532,4 +536,9 @@ export function pushPanelState(perm) {
 export function pushTargetNo(url) {
   const m = /#(\d+)$/.exec(String(url || '').trim());
   return m ? Number(m[1]) : null;
+}
+
+// How many of my listing marks (see listingMarks) fall in a date range: shown on the folded past-weeks line.
+export function countMarksIn(marks, from, to) {
+  return marks.filter(m => m.date >= from && m.date <= to).length;
 }

@@ -1,4 +1,4 @@
-import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, recordRows, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks, barTone, offerInfoRows, layoutWeek, splitSegments, signalRows, verdictHeader, factGrid, resultGrid, todayStrip, pastWeeks, countBarsIn, showApplyButton, pushPanelState, pushTargetNo } from './calendar.js';
+import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, recordRows, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks, barTone, offerInfoRows, layoutWeek, splitSegments, signalRows, verdictHeader, factGrid, resultGrid, todayStrip, pastWeeks, countBarsIn, showApplyButton, pushPanelState, pushTargetNo, countMarksIn } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
@@ -61,9 +61,10 @@ function renderCalendar() {
   const past = pastWeeks(grid, today, year, month);
   if (past.count) {
     const n = countBarsIn(bars, past.from, past.to);
+    const mine = countMarksIn(marks, past.from, past.to);   // my listing days hidden in the folded weeks
     const fold = h('button', { class: `past${state.pastOpen ? ' open' : ''}`, type: 'button', 'aria-expanded': state.pastOpen ? 'true' : 'false',
       onclick: () => { state.pastOpen = !state.pastOpen; renderCalendar(); $('weeks').querySelector('.past')?.focus(); } },
-      h('span', {}, `${md(past.from)}~${md(past.to)} 지난 청약 `, h('b', {}, `${n}건`)));
+      h('span', {}, `${md(past.from)}~${md(past.to)} 지난 청약 `, h('b', {}, `${n}건`), mine ? ` · 내 종목 ${mine}` : ''));
     weeks.append(fold);
   }
   for (const [wi, week] of grid.entries()) {
@@ -86,19 +87,17 @@ function renderCalendar() {
         const mipo = state.ipos.find(i => i.no === m.no);
         const now = dayStatus(mipo, today) === '오늘 상장';
         el.append(h('button', {
-          class: `bar mark${m.listed ? ' done' : ''}${now ? ' now' : ''}${state.selected === m.no ? ' selected' : ''}`,
+          class: `bar mark${m.listed ? ' done' : ''}${m.risk ? ' risk' : ''}${now ? ' now' : ''}${state.selected === m.no ? ' selected' : ''}`,
           type: 'button',
           style: place,
-          'aria-label': `${m.name} 상장일 ${md(m.date)}, 청약 신청함`,
+          'aria-label': `${m.name} 상장일 ${md(m.date)}, 청약 신청함${m.risk ? ', 하락 경고' : ''}`,
           onclick: () => select(m.no),
-        }, m.name));  // too long for the free cells: the bar's ellipsis cuts it
+        }, `${m.risk ? '⚠ ' : ''}${m.name}`));  // too long for the free cells: the bar's ellipsis cuts it
         continue;
       }
       const ipo = state.ipos.find(i => i.no === seg.b.no);
-      // A one-day piece of a bar that began in an earlier week has no room for text: colour only.
-      const continuationOneDay = seg.s > seg.b.start && seg.c0 === seg.c1;
       const bt = barTone(ipo, today);  // a subscription that is over is "done" (and carries no warning mark)
-      const label = barLabel({ name: seg.b.name, risk: bt === 'risk', applied: state.applied.has(ipo.no), continuationOneDay });
+      const label = barLabel({ name: seg.b.name, risk: bt === 'risk', applied: state.applied.has(ipo.no) });
       // A bar that crosses a week edge is cut square on that side and runs to the cell edge: it reads as "continues".
       const contL = seg.s > seg.b.start ? ' cont-l' : '';
       const contR = seg.e < seg.b.end ? ' cont-r' : '';
@@ -139,10 +138,10 @@ function renderList() {
   const parts = [];
   // The applied group is the first of the list (just below the calendar), whatever month is shown.
   if (g.applied.length) {
-    parts.push(h('section', { class: 'group' }, h('h4', {}, `신청한 청약 · ${g.applied.length}개`), g.applied.map(i => listRow(i, { big: true }))));
+    parts.push(h('section', { class: 'group' }, h('h3', {}, `신청한 청약 · ${g.applied.length}개`), g.applied.map(i => listRow(i, { big: true }))));
   }
   if (g.upcoming.length) {
-    parts.push(h('section', { class: 'group' }, h('h4', {}, `청약 예정·진행 중 · ${g.upcoming.length}개`), g.upcoming.map(i => listRow(i))));
+    parts.push(h('section', { class: 'group' }, h('h3', {}, `청약 예정·진행 중 · ${g.upcoming.length}개`), g.upcoming.map(i => listRow(i))));
   }
   if (g.done.length) {
     // Closed on every app start; opening it keeps it open only while the app stays open (month changes, back from a detail).
@@ -448,7 +447,7 @@ function renderStrip() {
   box.hidden = !rows.length;
   box.replaceChildren(...rows.map(r => {
     const value = h('span', { class: `v${r.muted ? ' muted' : ''}` }, r.v,
-      (r.sub || r.more) && h('small', {}, [r.sub && h('span', { class: 'now' }, r.sub), r.sub && r.more && ' · ', r.more]));
+      (r.sub || r.more) && h('small', {}, [r.sub && h('span', { class: r.risk ? 'risk' : 'now' }, r.sub), r.sub && r.more && ' · ', r.more]));
     const inner = [h('span', { class: 'k' }, r.k), value];
     return r.no == null ? h('div', { class: 'trow' }, inner)
       : h('button', { class: 'trow', type: 'button', onclick: () => select(r.no) }, inner);

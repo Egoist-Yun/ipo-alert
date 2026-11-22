@@ -63,6 +63,8 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .bar.mark { padding: 0 var(--space-xs); background-color: transparent; color: var(--weak-fg); font-weight: 600; text-align: left; }  /* spans free cells: normal bar text, light padding (the fill appears only for "now") */
 .bar.mark::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 3px; border-radius: 50%; background: currentColor; vertical-align: middle; }
 .bar.mark.now { background-color: var(--weak-bg); font-weight: 700; }
+.bar.mark.risk { color: var(--danger); }  /* a decline warning on the day of selling */
+.bar.mark.risk.now { background-color: var(--danger-weak); }
 /* past bars (subscription over, or already listed): grey; colour is only for what is still ahead. Selected/focus below win. */
 .bar.done { background-color: var(--surface); color: var(--body); }
 .bar.mark.done { background-color: transparent; color: var(--body); }  /* after .bar.done (grey fill): no fill for a mark */
@@ -74,7 +76,7 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 
 .list { margin-top: var(--space-xl); }
 .group { margin-bottom: var(--space-xl); }
-.group > h4 { margin-bottom: var(--space-md); color: var(--foreground); font-size: 1.0625rem; font-weight: 700; }
+.group > h3 { margin-bottom: var(--space-md); color: var(--foreground); font-size: 1.0625rem; font-weight: 700; }
 .drop > summary { display: flex; align-items: center; justify-content: space-between; min-height: 48px; padding: var(--space-md) 0; border-top: 1px solid var(--border); color: var(--foreground); font-size: 1rem; font-weight: 600; cursor: pointer; list-style: none; }
 .drop > summary::-webkit-details-marker { display: none; }
 .drop > summary::after { content: '▾'; color: var(--muted); }
@@ -186,6 +188,7 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .trow .v.muted { color: var(--muted); font-weight: 400; }
 .trow .v small { display: block; color: var(--muted); font-size: 0.8125rem; font-weight: 400; }
 .trow .v small .now { color: var(--weak-fg); font-weight: 600; }
+.trow .v small .risk { color: var(--danger); font-weight: 600; }
 /* folded weeks that are already over, above the first open week of the current month */
 .past { display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 44px; padding: 0; border: 0; border-top: 1px solid var(--border); background: transparent; color: var(--body); font: inherit; font-size: 0.875rem; text-align: left; }
 .past b { color: var(--foreground); font-weight: 600; }
