@@ -45,6 +45,9 @@ def _price_pos(i: Ipo, c: Ctx):
     return (i.final_price - i.band_low) / (i.band_high - i.band_low)
 
 
+# 38커뮤니케이션 writes the KOSPI board as "거래소" (most), rarely "코스피"/"유가증권"; anything else (코스닥, 코넥스) counts as 0.
+KOSPI_LABELS = {"거래소", "유가증권", "코스피"}
+
 FEATURES = {
     "comp": lambda i, c: _log(i.inst_competition),
     "lockup": lambda i, c: i.lockup_pct,
@@ -54,7 +57,7 @@ FEATURES = {
     "mood": lambda i, c: c.mood,
     "heat": lambda i, c: c.heat,
     "offer_amt": lambda i, c: _log(i.offer_amount_mil),
-    "kospi": lambda i, c: None if i.market is None else float(i.market == "유가증권"),
+    "kospi": lambda i, c: None if i.market is None else float(i.market in KOSPI_LABELS),
     "bio": lambda i, c: float(i.is_bio),
     "old_share": lambda i, c: i.old_share_pct,
     "loss": lambda i, c: None if i.net_income_mil is None else float(i.net_income_mil < 0),

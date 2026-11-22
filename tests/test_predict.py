@@ -337,3 +337,9 @@ def test_prediction_carries_warning_counts_and_price_range():
     after = predict_for(mk(906, comp=40, ret=None, retail_competition=4.0), hist, good_ev(), names=["comp"],
                         calibration=COUNT_CAL, full_history=hist)
     assert (after["open_down"]["caught"], after["open_down"]["warned"], after["open_down"]["n_down"]) == (8, 10, 11)
+
+
+@pytest.mark.parametrize("market,expected", [
+    ("거래소", 1.0), ("유가증권", 1.0), ("코스피", 1.0), ("코스닥", 0.0), ("코넥스", 0.0), (None, None)])
+def test_kospi_feature_counts_every_kospi_label_the_site_uses(market, expected):
+    assert features(mk(1, market=market), None, ["kospi"]) == [expected]
