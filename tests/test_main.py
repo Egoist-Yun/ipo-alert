@@ -35,9 +35,9 @@ class Rec:
 def _kind(call):
     """Every alert is titled with the app name, so what an alert is shows in its first line."""
     first = call["message"].split(chr(10))[0]
-    if first.startswith("수요예측 결과 ·"):
+    if first.startswith("수요예측 결과 "):
         return "result"
-    if first.startswith("내일 청약 ·"):
+    if first.startswith("내일 청약 "):
         return "eve"
     if first.startswith("수요예측 :"):
         return "daily"
@@ -82,7 +82,7 @@ def test_failure_keeps_old_file_and_alerts(tmp_path):
     code = run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=lambda u: "<html></html>", post=rec)
     assert code != 0
     assert json.loads((tmp_path / "ipos.json").read_text("utf-8"))["ipos"] == [{"no": 1}]
-    assert rec.calls[-1]["title"] == "공모주 달력" and rec.calls[-1]["message"].startswith("수집 실패 · ")
+    assert (rec.calls[-1]["title"], rec.calls[-1]["message"]) == ("공모주 달력", "앱 정보가 최신이 아닐 수 있어요. 다음 갱신 때 다시 시도해요.")
 
 
 def test_calendar_range_drops_old_stocks(tmp_path):
@@ -269,20 +269,20 @@ def _fetch_with_broken_details(broken_nos=None):
 
 def test_one_broken_detail_page_does_not_stop_the_run_and_is_reported(tmp_path):
     rec = Rec()
-    assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=_fetch_with_broken_details({2352}), post=rec) == 0
+    assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=_fetch_with_broken_details({2336, 2352}), post=rec) == 0
     data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
-    assert [f["no"] for f in data["detail_failures"]] == [2352]
-    assert data["detail_failures"][0]["name"] == "유캐스트" and "anchor" in data["detail_failures"][0]["error"]
+    assert [f["no"] for f in data["detail_failures"]] == [2336, 2352]
+    assert data["detail_failures"][0]["name"] == "넥스아이" and "anchor" in data["detail_failures"][0]["error"]
     assert "유캐스트" in [i["name"] for i in data["ipos"]]                       # the stock stays on the calendar with its table values
-    alerts = [c for c in rec.calls if c["message"].startswith("상세 수집 일부 실패 · ")]
-    assert len(alerts) == 1 and alerts[0]["title"] == "공모주 달력" and alerts[0]["message"] == "상세 수집 일부 실패 · 유캐스트"
+    alerts = [c for c in rec.calls if c["message"].startswith("일부 종목 정보가 갱신되지 않았어요")]
+    assert [(c["title"], c["message"]) for c in alerts] == [("공모주 달력", "일부 종목 정보가 갱신되지 않았어요 · 넥스아이, 유캐스트")]
 
 
 def test_no_failures_means_no_detail_failures_key_and_no_problem_alert(tmp_path):
     rec = Rec()
     run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=fake_fetch, post=rec)
     assert "detail_failures" not in json.loads((tmp_path / "ipos.json").read_text("utf-8"))
-    assert not any("일부 실패" in c["message"] for c in rec.calls)
+    assert not any("갱신되지 않았어요" in c["message"] for c in rec.calls)
 
 
 def test_mostly_broken_detail_pages_fail_the_run_and_keep_the_old_file(tmp_path):
@@ -290,7 +290,7 @@ def test_mostly_broken_detail_pages_fail_the_run_and_keep_the_old_file(tmp_path)
     rec = Rec()
     assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=_fetch_with_broken_details(), post=rec) == 1
     assert json.loads((tmp_path / "ipos.json").read_text("utf-8"))["ipos"] == [{"no": 1}]
-    assert rec.calls[-1]["title"] == "공모주 달력" and rec.calls[-1]["message"].startswith("수집 실패 · ") and "detail pages failed" in rec.calls[-1]["message"]
+    assert (rec.calls[-1]["title"], rec.calls[-1]["message"]) == ("공모주 달력", "앱 정보가 최신이 아닐 수 있어요. 다음 갱신 때 다시 시도해요.")   # no error text on the phone
 
 
 def test_a_failed_problem_alert_is_only_logged(tmp_path):
@@ -309,8 +309,8 @@ def test_a_ledger_failure_is_reported_in_the_payload_and_by_an_alert_but_the_run
     assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
     data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
     assert "ledger broke" in data["ledger_error"] and data["ledger"] is None
-    alerts = [c for c in rec.calls if c["message"].startswith("기록부 갱신 실패 · ")]
-    assert len(alerts) == 1 and alerts[0]["title"] == "공모주 달력" and "ledger broke" in alerts[0]["message"]
+    alerts = [c for c in rec.calls if c["message"].startswith("실전 성적")]
+    assert [(c["title"], c["message"]) for c in alerts] == [("공모주 달력", "실전 성적을 갱신하지 못했어요")]   # the error text stays out of the alert
 
 
 def _daily_run(tmp_path, ipos, when, post):
@@ -331,7 +331,7 @@ def test_the_daily_alert_is_three_counts_with_the_front_page_as_its_click(tmp_pa
     (tmp_path / "state.json").write_text(json.dumps({"sent": ["result:3", "result:4"]}), "utf-8")   # 3 and 4 were announced before
     _daily_run(tmp_path, [clean, warn, today_sub, today_listing], datetime(2026, 11, 23, 8, 17, tzinfo=KST), post)
     assert [(c["title"], c["message"], c["click"]) for c in calls] == [
-        ("공모주 달력", NL.join(["수요예측 : 2건", "청약시작 : 1건", "금일상장 : 1건"]), "https://s/")]
+        ("공모주 달력", NL.join(["수요예측 : 2건", "청약 시작 : 1건", "오늘 상장 : 1건"]), "https://s/")]
     assert {"result:1", "result:2"} <= set(_state(tmp_path)["sent"]) and _state(tmp_path)["digest_date"] == "2026-11-23"
 
 
@@ -339,7 +339,7 @@ def test_a_day_with_nothing_still_sends_all_three_lines(tmp_path):              
     calls, post = _calls()
     _daily_run(tmp_path, [], datetime(2026, 11, 21, 8, 17, tzinfo=KST), post)
     assert [(c["title"], c["message"], c["click"]) for c in calls] == [
-        ("공모주 달력", NL.join(["수요예측 : 0건", "청약시작 : 0건", "금일상장 : 0건"]), "https://s/")]
+        ("공모주 달력", NL.join(["수요예측 : 0건", "청약 시작 : 0건", "오늘 상장 : 0건"]), "https://s/")]
 
 
 def test_a_first_run_at_18_still_sends_the_daily_alert_and_a_second_run_does_not(tmp_path):    # (c)
@@ -375,7 +375,7 @@ def test_a_result_that_went_out_urgently_at_0559_is_not_repeated_in_the_daily_al
     assert _kinds(calls) == ["result"]
     _daily_run(tmp_path, [urgent], datetime(2026, 11, 19, 8, 17, tzinfo=KST), post)
     assert _kinds(calls) == ["result", "daily"]
-    assert calls[1]["message"] == NL.join(["수요예측 : 0건", "청약시작 : 0건", "금일상장 : 0건"])   # sub_start 11/20 is not today; the result was sent at 05:59
+    assert calls[1]["message"] == NL.join(["수요예측 : 0건", "청약 시작 : 0건", "오늘 상장 : 0건"])   # sub_start 11/20 is not today; the result was sent at 05:59
 
 
 def test_the_daily_alert_counts_only_the_first_day_of_a_subscription_and_leaves_out_spacs_and_withdrawn(tmp_path):   # (f)
@@ -387,11 +387,11 @@ def test_the_daily_alert_counts_only_the_first_day_of_a_subscription_and_leaves_
     gone = _digest_ipo(3, name="철회", withdrawn=True, **first_day)
     listing_spac = _digest_ipo(4, name="스팩상장", is_spac=True, listing_date="2026-11-23")
     _daily_run(tmp_path, [waiting, running, spac, gone, listing_spac], datetime(2026, 11, 23, 8, 17, tzinfo=KST), post)
-    assert calls[0]["message"].split(NL) == ["수요예측 : 1건", "청약시작 : 1건", "금일상장 : 0건"]   # only 진행중 has a result to send (결과없음 has none)
+    assert calls[0]["message"].split(NL) == ["수요예측 : 1건", "청약 시작 : 1건", "오늘 상장 : 0건"]   # only 진행중 has a result to send (결과없음 has none)
 
 
 def test_a_stock_without_a_result_sorts_after_stocks_with_a_verdict_even_with_a_warning_set():   # (g)
     from ipo.notify import _verdict
     no_result = _digest_ipo(6, inst_competition=None, warning="strong")
-    assert _verdict(no_result) == (3, "결과 전")
+    assert _verdict(no_result) == (3, "대기 중")
     assert _verdict(_digest_ipo(7)) < _verdict(no_result)

@@ -97,7 +97,7 @@ jobs:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
         run: |
-          MSG="수집 실패 · 데이터가 갱신되지 않았을 수 있어요."
+          MSG="앱 정보가 최신이 아닐 수 있어요. 다음 갱신 때 다시 시도해요."
           # FCM (with ntfy as its fallback) through the project's own sender; plain ntfy if python or the dependencies are not there
           python -m ipo.push "공모주 달력" "$MSG" || {
             if [ -n "$NTFY_TOPIC" ]; then

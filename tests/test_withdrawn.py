@@ -39,7 +39,7 @@ def test_a_stock_that_vanished_and_whose_page_is_gone_is_carried_as_withdrawn_wi
     kept = _ipos(tmp_path)[9001]
     assert kept["withdrawn"] == "2026-11-17" and kept["warning"] is None
     alerts = [c for c in rec.calls if c["message"].startswith("청약 철회 · ")]
-    assert len(alerts) == 1 and alerts[0]["title"] == "공모주 달력" and alerts[0]["message"] == "청약 철회 · 철회주 · 11/23~24"
+    assert [(c["title"], c["message"]) for c in alerts] == [("공모주 달력", "청약 철회 · 철회주 · 11/23~24")]
     state = json.loads((tmp_path / "state.json").read_text("utf-8"))
     assert "withdrawn:9001" in state["sent"]
 
@@ -61,7 +61,7 @@ def test_a_vanished_stock_whose_page_still_exists_is_a_failure_not_a_withdrawal(
     kept = {i["no"]: i for i in data["ipos"]}[9001]
     assert kept["withdrawn"] is None                         # kept as it was, to be checked again
     assert any(f["no"] == 9001 and f["error"] == "목록에서 사라짐" for f in data["detail_failures"])
-    assert any(c["message"].startswith("상세 수집 일부 실패 · ") for c in rec.calls)
+    assert any(c["message"].startswith("일부 종목 정보가 갱신되지 않았어요 · ") for c in rec.calls)
 
 
 def test_a_failed_fetch_of_the_vanished_stock_is_a_failure_too(tmp_path):
@@ -298,3 +298,12 @@ def test_failures_with_no_zero_and_different_names_are_not_merged(tmp_path):
     run(tmp_path, None, "", NOW, fetch=fake_fetch, post=Rec())
     names = [f["name"] for f in json.loads((tmp_path / "ipos.json").read_text("utf-8"))["detail_failures"] if f["no"] == 0]
     assert sorted(names) == ["가", "나"]
+
+
+def test_a_withdrawal_alert_for_a_stock_without_subscription_dates_has_only_the_name(tmp_path):
+    from ipo.main import _withdrawn_alerts
+    from ipo.models import Ipo
+    rec = Rec()
+    gone = Ipo(no=9002, name="철회주", url="u", withdrawn="2026-11-17")    # no subscription dates
+    _withdrawn_alerts(tmp_path, [gone], Target(topic="t"), rec)
+    assert [(c["title"], c["message"]) for c in rec.calls] == [("공모주 달력", "청약 철회 · 철회주")]

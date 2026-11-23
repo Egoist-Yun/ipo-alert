@@ -202,7 +202,7 @@ export function listingAlarms(ipos, applied, nowIso) {
     .map(({ ipo, at }) => {
       const parts = [`오늘 ${ipo.name} 상장`];
       if (ipo.final_price) parts.push(`공모가 ${Number(ipo.final_price).toLocaleString('ko-KR')}원`);
-      if (ipo.warning === 'strong') parts.push('강한 경고'); else if (ipo.warning === 'warn') parts.push('경고');
+      if (ipo.warning === 'strong') parts.push('강한 하락 경고'); else if (ipo.warning === 'warn') parts.push('하락 경고');
       return { id: ipo.no, at, title: '공모주 달력', body: parts.join(' · '), no: ipo.no };
     });
 }

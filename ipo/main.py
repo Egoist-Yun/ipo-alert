@@ -206,9 +206,9 @@ def _problem_alerts(target: Target, failures: list, ledger_errors: list, post) -
     """Short notices for problems that did not stop the run. A failed notice is only logged."""
     notices = []
     if failures:
-        notices.append({"title": config.APP_NAME, "message": "상세 수집 일부 실패 · " + ", ".join(f["name"] for f in failures)[:300]})
+        notices.append({"title": config.APP_NAME, "message": "일부 종목 정보가 갱신되지 않았어요 · " + ", ".join(f["name"] for f in failures)[:300]})
     if ledger_errors:
-        notices.append({"title": config.APP_NAME, "message": f"기록부 갱신 실패 · {ledger_errors[0][:300]}"})
+        notices.append({"title": config.APP_NAME, "message": "실전 성적을 갱신하지 못했어요"})   # the error text is in the log and in ipos.json
     for notice in notices:
         try:
             send(notice, target, post=post)
@@ -274,11 +274,11 @@ def run(data_dir: Path, target: Target | None, site_url: str, now_kst: datetime,
         if ledger_errors:
             payload["ledger_error"] = ledger_errors[0]
         _atomic_write(data_dir / "ipos.json", json.dumps(payload, ensure_ascii=False))
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
         if target:
             try:
-                send(failure_alert(f"{type(e).__name__}: {e}"), target, post=post)
+                send(failure_alert(), target, post=post)   # the error is in the log above, not in the alert
             except Exception:
                 traceback.print_exc()
         return 1

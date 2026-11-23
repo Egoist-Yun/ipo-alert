@@ -12,13 +12,7 @@ from ipo.models import Ipo
 from ipo.push import fcm_send
 
 NTFY_URL = "https://ntfy.sh"
-
-
-def _md(day: str | None) -> str | None:
-    if not day:
-        return None
-    d = date.fromisoformat(day)
-    return f"{d.month}/{d.day}"
+FAILURE_MESSAGE = "앱 정보가 최신이 아닐 수 있어요. 다음 갱신 때 다시 시도해요."
 
 
 def digest_run(state: dict, now_kst: datetime) -> bool:
@@ -87,25 +81,22 @@ def _line(*parts: str | None) -> str:
 def _verdict(ipo: Ipo) -> tuple[int, str]:
     """(rank, wording): strong warning first, then warning, then the rest. Wording is empty when there is no warning."""
     if ipo.inst_competition is None:
-        return 3, "결과 전"   # nothing to judge yet (also when the page failed to parse): after the stocks with a verdict
+        return 3, "대기 중"   # nothing to judge yet (also when the page failed to parse): after the stocks with a verdict
     pred = ipo.prediction or {}
     model_warn = bool((pred.get("open_down") or pred.get("prob") or {}).get("warn"))
     if ipo.warning == "strong":
-        return 0, "강한 경고"
+        return 0, "강한 하락 경고"
     if ipo.warning == "warn" or model_warn:
-        return 1, "경고"
+        return 1, "하락 경고"
     return 2, ""
 
 
 def format_digest(kind: str, ipos: list[Ipo], site_url: str) -> dict:
     """One summary alert for several stocks (kind: 'result' = demand-forecast results, 'eve' = subscriptions tomorrow)."""
-    lines = []
+    lines = [f"수요예측 결과 {len(ipos)}건" if kind == "result" else f"내일 청약 {len(ipos)}건"]
     for ipo in sorted(ipos, key=lambda i: (_verdict(i)[0], i.sub_start or "", i.no)):
-        if kind == "result":
-            span = _span(ipo.sub_start, ipo.sub_end)
-            lines.append(_line("수요예측 결과", ipo.name, _verdict(ipo)[1], f"청약 {span}" if span else None))
-        else:
-            lines.append(_line("내일 청약", ipo.name, _verdict(ipo)[1]))
+        span = _span(ipo.sub_start, ipo.sub_end) if kind == "result" else None
+        lines.append(_line(ipo.name, _verdict(ipo)[1], f"청약 {span}" if span else None))
     base = site_url.rstrip("/")
     return {"title": APP_NAME, "message": "\n".join(lines), "click": f"{base}/#{ipos[0].no}" if len(ipos) == 1 else f"{base}/"}
 
@@ -116,8 +107,8 @@ def format_daily(results: list[Ipo], ipos: list[Ipo], today: date, site_url: str
     day = today.isoformat()
     live = [i for i in ipos if not i.is_spac and not i.withdrawn]
     lines = [f"수요예측 : {len(results)}건",
-             f"청약시작 : {sum(1 for i in live if i.sub_start == day)}건",
-             f"금일상장 : {sum(1 for i in live if i.listing_date == day)}건"]
+             f"청약 시작 : {sum(1 for i in live if i.sub_start == day)}건",
+             f"오늘 상장 : {sum(1 for i in live if i.listing_date == day)}건"]
     return {"title": APP_NAME, "message": chr(10).join(lines), "click": f"{site_url.rstrip('/')}/"}
 
 
@@ -127,10 +118,10 @@ def format_pre_alert(ipo: Ipo, site_url: str) -> dict:
     od = pred["open_down"]
     head = f"{ipo.name} 상장 전"
     if ipo.warning == "strong":
-        head += " · 시초가 강한 경고"
+        head += " · 시초가 강한 하락 경고"
     elif od["warn"]:
-        head += " · 시초가 경고"
-    lines = [head, f"하락 확률 {od['p_down'] * 100:.0f}% (기준 {od['threshold'] * 100:.0f}%)"]
+        head += " · 시초가 하락 경고"
+    lines = [head, f"시초가가 공모가 아래일 확률 {od['p_down'] * 100:.0f}%"]
     op = pred.get("open")
     if op:
         lines.append(f"예상 시초가 {op['price']:,}원 ({op['return'] * 100:+.0f}%)")
@@ -199,8 +190,9 @@ def target_from_env(env=None, post=requests.post) -> Target:
     return Target(topic=topic, fcm_sa=sa)
 
 
-def failure_alert(reason: str) -> dict:
-    return {"title": APP_NAME, "message": f"수집 실패 · {reason[:300]}"}
+def failure_alert() -> dict:
+    """The run failed: say what it means for the app (the error itself goes to the log, not to the phone)."""
+    return {"title": APP_NAME, "message": FAILURE_MESSAGE}
 
 
 def load_state(path) -> dict:
