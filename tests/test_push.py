@@ -124,7 +124,7 @@ def test_a_broken_service_account_uses_ntfy_only_says_so_once_and_prints_no_valu
     secret = '{"private_key": "TOP-SECRET'
     t = target_from_env({"NTFY_TOPIC": "nt", "FCM_SERVICE_ACCOUNT": secret}, post=rec)
     assert t.fcm_sa is None and not t.fcm and t.topic == "nt"
-    assert [c["title"] for c in rec.calls] == ["공모주 FCM 설정 읽기 실패"]
+    assert [(c["title"], c["message"]) for c in rec.calls] == [("공모주 달력", "설정 오류 · FCM_SERVICE_ACCOUNT를 읽지 못해 ntfy로만 보내요")]
     out = capsys.readouterr()
     assert "TOP-SECRET" not in out.out + out.err
 

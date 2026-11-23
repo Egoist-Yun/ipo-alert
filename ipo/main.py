@@ -12,7 +12,7 @@ from ipo import config
 from ipo.collect import collect_current, detail_failure, detail_url, market_mood
 from ipo.fetch import FetchError, get_html
 from ipo.history import load_history, save_history, update_history
-from ipo.notify import (Target, digest_run, due_alerts, failure_alert, format_digest, format_daily, format_pre_alert, group_alerts, load_state, mark_digest, mark_sent,
+from ipo.notify import (Target, _line, _span, digest_run, due_alerts, failure_alert, format_digest, format_daily, format_pre_alert, group_alerts, load_state, mark_digest, mark_sent,
                         save_state,
                         send, target_from_env)
 from ipo.patterns import match_patterns, pattern_stats, warning_level
@@ -167,18 +167,13 @@ def _withdrawn_alerts(data_dir: Path, ipos: list, target: Target, post) -> None:
         key = f"withdrawn:{ipo.no}"
         if not ipo.withdrawn or key in sent:
             continue
-        period = f"{_md(ipo.sub_start)}~{_md(ipo.sub_end)}" if ipo.sub_start and ipo.sub_end else "일정 미정"
         try:
-            send({"title": "공모주 청약 철회", "message": f"{ipo.name} · 청약 {period} 예정이었어요"}, target, post=post)
+            send({"title": config.APP_NAME, "message": _line("청약 철회", ipo.name, _span(ipo.sub_start, ipo.sub_end))}, target, post=post)
         except Exception:
             traceback.print_exc()
             continue
         mark_sent(state, [(key, ipo)])
         save_state(path, state)
-
-
-def _md(iso: str) -> str:
-    return f"{int(iso[5:7])}/{int(iso[8:10])}"
 
 
 def _warning_pre(pred: dict | None, matched: list[dict]) -> str | None:
@@ -211,9 +206,9 @@ def _problem_alerts(target: Target, failures: list, ledger_errors: list, post) -
     """Short notices for problems that did not stop the run. A failed notice is only logged."""
     notices = []
     if failures:
-        notices.append({"title": "공모주 상세 수집 일부 실패", "message": ", ".join(f["name"] for f in failures)[:300]})
+        notices.append({"title": config.APP_NAME, "message": "상세 수집 일부 실패 · " + ", ".join(f["name"] for f in failures)[:300]})
     if ledger_errors:
-        notices.append({"title": "공모주 기록부 갱신 실패", "message": ledger_errors[0][:300]})
+        notices.append({"title": config.APP_NAME, "message": f"기록부 갱신 실패 · {ledger_errors[0][:300]}"})
     for notice in notices:
         try:
             send(notice, target, post=post)
@@ -273,8 +268,7 @@ def run(data_dir: Path, target: Target | None, site_url: str, now_kst: datetime,
         history = load_history(history_path) if history_path.exists() else []   # saved by _build just above
         ipos = sorted(ipos + _carry_withdrawn(previous, ipos, history, now_kst, fetch, raw_failures), key=lambda i: (i.sub_start or "", i.no))
         failures = list({(f["no"], f["name"]): f for f in raw_failures}.values())  # a stock can fail in both the history and the current pass
-        payload = {"updated_at": now_kst.isoformat(), "disclaimer": config.DISCLAIMER,
-                   "ledger": _update_ledger(data_dir, ipos, now_kst, ledger_errors), "ipos": [asdict(i) for i in ipos]}
+        payload = {"updated_at": now_kst.isoformat(), "ledger": _update_ledger(data_dir, ipos, now_kst, ledger_errors), "ipos": [asdict(i) for i in ipos]}
         if failures:
             payload["detail_failures"] = failures
         if ledger_errors:

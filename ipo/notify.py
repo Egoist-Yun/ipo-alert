@@ -7,7 +7,7 @@ from pathlib import Path
 
 import requests
 
-from ipo.config import DISCLAIMER
+from ipo.config import APP_NAME
 from ipo.models import Ipo
 from ipo.push import fcm_send
 
@@ -70,96 +70,71 @@ def group_alerts(due: list[tuple[str, Ipo]]) -> dict[str, list[tuple[str, Ipo]]]
     return groups
 
 
-def _pattern_line(patterns: list[dict], use_open: bool) -> str | None:
-    key = "open_down" if use_open else "close_down"
-    where = "시초가 공모가 아래" if use_open else "첫날 공모가 아래"
-    risks = [p for p in patterns if p["kind"] == "risk" and p.get(key) is not None]
-    if risks:
-        top = max(risks, key=lambda p: p[key])
-        return f"과거 하락 패턴: {top['label']} (과거 {top['n']}개 중 {top[key] * 100:.0f}%가 {where})"
-    safes = [p for p in patterns if p["kind"] == "safe" and p.get(key) is not None]
-    if safes:
-        top = min(safes, key=lambda p: p[key])
-        return f"과거 하락이 드문 패턴: {top['label']} (과거 {top['n']}개 중 {top[key] * 100:.0f}%만 {where})"
-    return None
+def _span(start: str | None, end: str | None) -> str | None:
+    """'11/18~19' within a month, '11/28~12/1' across months, a single day once; None when a date is missing."""
+    if not start or not end:
+        return None
+    s, e = date.fromisoformat(start), date.fromisoformat(end)
+    if s == e:
+        return f"{s.month}/{s.day}"
+    return f"{s.month}/{s.day}~{e.day}" if (s.year, s.month) == (e.year, e.month) else f"{s.month}/{s.day}~{e.month}/{e.day}"
+
+
+def _line(*parts: str | None) -> str:
+    return " · ".join(p for p in parts if p)
 
 
 def _verdict(ipo: Ipo) -> tuple[int, str]:
-    """(rank, wording): strong warning first, then warning, then the rest. No warning symbol: the words say it."""
+    """(rank, wording): strong warning first, then warning, then the rest. Wording is empty when there is no warning."""
     if ipo.inst_competition is None:
-        return 3, "수요예측 결과 아직 없음"   # nothing to judge yet (also when the page failed to parse): after the stocks with a verdict
+        return 3, "결과 전"   # nothing to judge yet (also when the page failed to parse): after the stocks with a verdict
     pred = ipo.prediction or {}
     model_warn = bool((pred.get("open_down") or pred.get("prob") or {}).get("warn"))
     if ipo.warning == "strong":
-        return 0, "강한 하락 경고"
+        return 0, "강한 경고"
     if ipo.warning == "warn" or model_warn:
-        return 1, "하락 경고"
-    if ipo.flag_count > 0:
-        return 2, f"경고 없음 (신호 {ipo.flag_count}개)"
-    if ipo.unknown_count >= 2:
-        return 2, f"경고 없음 (확인 불가 {ipo.unknown_count}개)"
-    return 2, "경고 없음"
+        return 1, "경고"
+    return 2, ""
 
 
 def format_digest(kind: str, ipos: list[Ipo], site_url: str) -> dict:
     """One summary alert for several stocks (kind: 'result' = demand-forecast results, 'eve' = subscriptions tomorrow)."""
-    title = f"수요예측 결과 {len(ipos)}건" if kind == "result" else f"내일 청약 {len(ipos)}건"
     lines = []
     for ipo in sorted(ipos, key=lambda i: (_verdict(i)[0], i.sub_start or "", i.no)):
-        span = f"{_md(ipo.sub_start)}~{_md(ipo.sub_end)}" if ipo.sub_start and ipo.sub_end else "일정 미정"
-        lines.append(f"{ipo.name} · {_verdict(ipo)[1]} · 청약 {span}")
-    lines.append(DISCLAIMER)
+        if kind == "result":
+            span = _span(ipo.sub_start, ipo.sub_end)
+            lines.append(_line("수요예측 결과", ipo.name, _verdict(ipo)[1], f"청약 {span}" if span else None))
+        else:
+            lines.append(_line("내일 청약", ipo.name, _verdict(ipo)[1]))
     base = site_url.rstrip("/")
-    return {"title": title, "message": "\n".join(lines), "click": f"{base}/#{ipos[0].no}" if len(ipos) == 1 else f"{base}/"}
+    return {"title": APP_NAME, "message": "\n".join(lines), "click": f"{base}/#{ipos[0].no}" if len(ipos) == 1 else f"{base}/"}
 
 
 def format_daily(results: list[Ipo], ipos: list[Ipo], today: date, site_url: str) -> dict:
-    """The one alert every day: new demand-forecast results, then today's subscriptions and listings (SPACs and withdrawn
-    stocks are left out of the last two). A day with none of these says so, without the disclaimer (no judgement in it)."""
-    def order(i: Ipo):
-        return (_verdict(i)[0], i.sub_start or "", i.no)
-
-    live = [i for i in ipos if not i.is_spac and not i.withdrawn]
+    """The one alert every day, counts only (the details are in the app): demand-forecast results sent today, stocks whose
+    subscription starts today, stocks listing today (SPACs and withdrawn stocks are not counted in the last two)."""
     day = today.isoformat()
-    subscribing = [i for i in live if i.sub_start and i.sub_end and i.sub_start <= day <= i.sub_end]
-    listing = [i for i in live if i.listing_date == day]
-    lines = []
-    for i in sorted(results, key=order):
-        span = f"{_md(i.sub_start)}~{_md(i.sub_end)}" if i.sub_start and i.sub_end else "일정 미정"
-        lines.append(f"수요예측 결과 · {i.name} · {_verdict(i)[1]} · 청약 {span}")
-    lines += [f"오늘 청약 · {i.name} · {_verdict(i)[1]}" for i in sorted(subscribing, key=order)]
-    lines += [f"오늘 상장 · {i.name} · {_verdict(i)[1]}" for i in sorted(listing, key=order)]
-    base = site_url.rstrip("/")
-    if not lines:
-        return {"title": "오늘의 공모주 소식", "message": "오늘은 새 수요예측 결과도, 청약·상장 일정도 없어요.", "click": f"{base}/"}
-    shown = {i.no: i for i in [*results, *subscribing, *listing]}
-    lines.append(DISCLAIMER)
-    return {"title": "오늘의 공모주 소식", "message": chr(10).join(lines),
-            "click": f"{base}/#{next(iter(shown))}" if len(shown) == 1 else f"{base}/"}
+    live = [i for i in ipos if not i.is_spac and not i.withdrawn]
+    lines = [f"수요예측 : {len(results)}건",
+             f"청약시작 : {sum(1 for i in live if i.sub_start == day)}건",
+             f"금일상장 : {sum(1 for i in live if i.listing_date == day)}건"]
+    return {"title": APP_NAME, "message": chr(10).join(lines), "click": f"{site_url.rstrip('/')}/"}
 
 
 def format_pre_alert(ipo: Ipo, site_url: str) -> dict:
-    """After the subscription closes: open-price outlook using the retail competition."""
+    """After the subscription closes: the open-price outlook."""
     pred = ipo.prediction or {}
     od = pred["open_down"]
-    lines = [f"시초가 하락 확률 {od['p_down'] * 100:.0f}% (경고 기준 {od['threshold'] * 100:.0f}%)"]
-    pattern = _pattern_line(ipo.patterns, use_open=True)
-    if pattern:
-        lines.append(pattern)
+    head = f"{ipo.name} 상장 전"
+    if ipo.warning == "strong":
+        head += " · 시초가 강한 경고"
+    elif od["warn"]:
+        head += " · 시초가 경고"
+    lines = [head, f"하락 확률 {od['p_down'] * 100:.0f}% (기준 {od['threshold'] * 100:.0f}%)"]
     op = pred.get("open")
     if op:
-        lines.append(f"시초가 예상 {op['price']:,}원 ({op['return'] * 100:+.0f}%, ±{op['mae'] * 100:.0f}%p)")
-    if ipo.retail_competition is not None:
-        lines.append(f"일반청약 경쟁률 {ipo.retail_competition:.0f}대 1")
-    if od["warn"]:
-        lines.append(f"과거 검증: 하락의 {od['recall'] * 100:.0f}%를 미리 잡았고, 경고의 {od['precision'] * 100:.0f}%가 맞았어요.")
-    lines.append(DISCLAIMER)
-    return {
-        "title": f"{ipo.name} 상장 전 · "
-                 f"{'시초가 강한 하락 경고' if ipo.warning == 'strong' else '시초가 하락 경고' if od['warn'] else '시초가 예상'}",
-        "message": "\n".join(lines),
-        "click": f"{site_url.rstrip('/')}/#{ipo.no}",
-    }
+        lines.append(f"예상 시초가 {op['price']:,}원 ({op['return'] * 100:+.0f}%)")
+    return {"title": APP_NAME, "message": "\n".join(lines), "click": f"{site_url.rstrip('/')}/#{ipo.no}"}
 
 
 @dataclass(frozen=True)
@@ -217,15 +192,15 @@ def target_from_env(env=None, post=requests.post) -> Target:
             sa = None
             if topic:
                 try:
-                    _ntfy({"title": "공모주 FCM 설정 읽기 실패",
-                           "message": "GitHub 비밀값 FCM_SERVICE_ACCOUNT를 읽지 못해 ntfy로만 보내요"}, topic, post)
+                    _ntfy({"title": APP_NAME,
+                           "message": "설정 오류 · FCM_SERVICE_ACCOUNT를 읽지 못해 ntfy로만 보내요"}, topic, post)
                 except Exception:
                     traceback.print_exc()
     return Target(topic=topic, fcm_sa=sa)
 
 
 def failure_alert(reason: str) -> dict:
-    return {"title": "공모주 수집 실패", "message": reason[:300]}
+    return {"title": APP_NAME, "message": f"수집 실패 · {reason[:300]}"}
 
 
 def load_state(path) -> dict:

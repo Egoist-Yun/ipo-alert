@@ -6,7 +6,7 @@ MAX_FLOAT_PCT = 35.0
 MOOD_WINDOW = 10
 MOOD_BAD_RATIO = 0.5
 
-DISCLAIMER = "투자 권유가 아닌 공개 정보 정리입니다. 청약 판단은 본인이 하세요."
+APP_NAME = "공모주 달력"   # the title of every alert; same as appName in app/capacitor.config.json
 
 BASE_URL = "https://www.38.co.kr/html/fund/"
 

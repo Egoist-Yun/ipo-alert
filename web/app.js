@@ -560,7 +560,6 @@ async function init() {
     $('record-link').hidden = !state.ledger;
     const t = new Date(data.updated_at);
     $('updated').textContent = Number.isNaN(t.getTime()) ? '' : `마지막 갱신 ${t.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
-    $('disclaimer').textContent = data.disclaimer || '';
     const hrs = staleHours(data.updated_at, Date.now());
     if (hrs != null && hrs >= 14) $('stale').textContent = `데이터가 ${hrs}시간 전 기준이에요. 최신이 아닐 수 있어요.`;
   } catch (e) {

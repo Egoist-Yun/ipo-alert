@@ -302,7 +302,7 @@ test('listingAlarms: a marked stock is alarmed at 08:30 KST on its listing day',
   const [a] = listingAlarms([L(7, NOV30)], new Set([7]), '2026-11-18T17:35:00+09:00');
   assert.deepEqual(a, {
     id: 7, no: 7, at: '2026-11-30T08:30:00+09:00',
-    title: '오늘 S7 상장', body: '시초가 매도 준비. 공모가 19,000원',
+    title: '공모주 달력', body: '오늘 S7 상장 · 공모가 19,000원',
   });
 });
 
@@ -330,11 +330,16 @@ test('listingAlarms: spacs that were marked get an alarm too; ids are the stock 
   assert.deepEqual(got.map(a => [a.id, a.at]), [[5, '2026-11-30T08:30:00+09:00'], [9, '2026-12-03T08:30:00+09:00']]);
 });
 
-test('listingAlarms: the body drops the price when unknown and adds the warning line', () => {
+test('listingAlarms: the body is one line: name, price, warning; a missing price or warning leaves its part out', () => {
   const now = '2026-11-18T10:00:00+09:00';
-  assert.equal(listingAlarms([L(7, NOV30, { final_price: null })], new Set([7]), now)[0].body, '시초가 매도 준비.');
-  assert.equal(listingAlarms([L(7, NOV30, { warning: 'warn' })], new Set([7]), now)[0].body, '시초가 매도 준비. 공모가 19,000원\n하락 경고가 있어요.');
-  assert.equal(listingAlarms([L(7, NOV30, { warning: 'strong' })], new Set([7]), now)[0].body, '시초가 매도 준비. 공모가 19,000원\n강한 하락 경고가 있어요.');
+  const body = extra => listingAlarms([L(7, NOV30, extra)], new Set([7]), now)[0].body;
+  assert.equal(body({ warning: 'strong' }), '오늘 S7 상장 · 공모가 19,000원 · 강한 경고');
+  assert.equal(body({ warning: 'warn' }), '오늘 S7 상장 · 공모가 19,000원 · 경고');
+  assert.equal(body({}), '오늘 S7 상장 · 공모가 19,000원');
+  assert.equal(body({ final_price: null, warning: 'strong' }), '오늘 S7 상장 · 강한 경고');
+  assert.equal(body({ final_price: null }), '오늘 S7 상장');
+  assert.ok(!body({ warning: 'warn' }).includes('시초가 매도 준비'));
+  assert.ok(listingAlarms([L(7, NOV30)], new Set([7]), now).every(a => a.title === '공모주 달력'));
 });
 
 test('listingAlarms: a bad clock value yields nothing instead of throwing', () => {

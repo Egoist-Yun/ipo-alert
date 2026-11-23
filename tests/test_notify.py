@@ -1,10 +1,10 @@
 from dataclasses import replace
-from datetime import datetime
+from datetime import date as date_, datetime
 
-from ipo.config import DISCLAIMER, KST
+from ipo.config import APP_NAME, KST
 from ipo.models import Ipo
 from ipo.notify import (digest_run, due_alerts, failure_alert, format_digest, group_alerts, load_state, mark_digest,
-                        mark_sent, save_state, send, Target)
+                        mark_sent, save_state, send, Target, _line, _span, _verdict, format_daily, format_pre_alert)
 
 
 def kst(y, m, d, h, minute=0):
@@ -67,8 +67,9 @@ def test_send_posts_json():
     assert calls[0][1]["title"] == "t"
 
 
-def test_failure_alert_title():
-    assert failure_alert("boom")["title"] == "공모주 수집 실패"
+def test_failure_alert_is_titled_with_the_app_name_and_cuts_the_reason_at_300_characters():
+    assert failure_alert("boom") == {"title": "공모주 달력", "message": "수집 실패 · boom"}
+    assert failure_alert("x" * 500)["message"] == "수집 실패 · " + "x" * 300
 
 
 def test_state_roundtrip_and_missing_file(tmp_path):
@@ -101,44 +102,25 @@ def test_no_pre_listing_alert_once_listed_or_before_subscription():
     assert [k for k, _ in due_alerts([no_retail], st, kst(2026, 11, 6, 18))] == []
 
 
-def test_pre_listing_alert_text():
-    from ipo.notify import format_pre_alert
+def test_pre_listing_alert_is_three_short_lines_titled_with_the_app_name():
     p = format_pre_alert(LISTING_SOON, "https://s/")
-    assert p["title"] == "넥스아이 상장 전 · 시초가 하락 경고"
-    assert "시초가 하락 확률 62% (경고 기준 30%)" in p["message"]
-    assert "시초가 예상 7,120원 (-11%, ±37%p)" in p["message"]
-    assert "일반청약 경쟁률 13대 1" in p["message"]
-    assert "하락의 75%를 미리 잡았고, 경고의 82%가 맞았어요" in p["message"]
-    assert DISCLAIMER in p["message"] and p["click"] == "https://s/#88"
-    calm = replace(LISTING_SOON, prediction={**LISTING_SOON.prediction,
-                                             "open_down": {**OPEN_DOWN, "p_down": 0.1, "warn": False}})
-    assert format_pre_alert(calm, "https://s/")["title"] == "넥스아이 상장 전 · 시초가 예상"
+    assert p["title"] == "공모주 달력" and p["click"] == "https://s/#88"
+    assert p["message"].split(chr(10)) == ["넥스아이 상장 전 · 시초가 경고", "하락 확률 62% (기준 30%)", "예상 시초가 7,120원 (-11%)"]
 
 
-RISK = {"key": "lock_comp", "label": "의무보유확약 1% 미만 + 기관 경쟁률 300대 1 미만", "phase": "pre", "kind": "risk",
-        "n": 24, "close_down": 0.75, "open_down": 0.5}
-POST_RISK = {"key": "retail_lock", "label": "일반청약 경쟁률 100대 1 미만 + 의무보유확약 1% 미만", "phase": "post",
-             "kind": "risk", "n": 24, "close_down": 0.88, "open_down": 0.58}
-SAFE = {"key": "strong", "label": "기관 경쟁률 1000대 1 초과 + 의무보유확약 3% 이상", "phase": "pre", "kind": "safe",
-        "n": 82, "close_down": 0.1, "open_down": 0.0}
+def test_pre_alert_first_line_says_strong_warn_or_nothing():
+    strong = format_pre_alert(replace(LISTING_SOON, warning="strong"), "https://s/")["message"].split(chr(10))
+    assert strong[0] == "넥스아이 상장 전 · 시초가 강한 경고"
+    calm = replace(LISTING_SOON, prediction={**LISTING_SOON.prediction, "open_down": {**OPEN_DOWN, "p_down": 0.1, "warn": False}})
+    lines = format_pre_alert(calm, "https://s/")["message"].split(chr(10))
+    assert lines == ["넥스아이 상장 전", "하락 확률 10% (기준 30%)", "예상 시초가 7,120원 (-11%)"]
 
 
-def test_pre_listing_alert_uses_open_rate_of_post_pattern():
-    from ipo.notify import format_pre_alert
-    p = format_pre_alert(replace(LISTING_SOON, patterns=[RISK, POST_RISK]), "https://s/")
-    assert "과거 하락 패턴: 일반청약 경쟁률 100대 1 미만 + 의무보유확약 1% 미만 (과거 24개 중 58%가 시초가 공모가 아래)" in p["message"]
-
-
-def test_pre_alert_title_names_the_strong_warning():
-    from ipo.notify import format_pre_alert
-    pre = format_pre_alert(replace(LISTING_SOON, warning="strong"), "https://s/")
-    assert pre["title"] == "넥스아이 상장 전 · 시초가 강한 하락 경고"
-
-
-def test_pre_alert_shows_the_safe_pattern_when_there_is_no_risk_pattern():
-    from ipo.notify import format_pre_alert
-    p = format_pre_alert(replace(LISTING_SOON, patterns=[SAFE]), "https://s/")
-    assert "과거 하락이 드문 패턴: 기관 경쟁률 1000대 1 초과 + 의무보유확약 3% 이상 (과거 82개 중 0%만 시초가 공모가 아래)" in p["message"]
+def test_pre_alert_without_an_open_price_has_two_lines_and_never_the_old_extra_lines():
+    no_open = replace(LISTING_SOON, patterns=[{"kind": "risk", "label": "x", "n": 24, "open_down": 0.5}],
+                      prediction={**LISTING_SOON.prediction, "open": None})
+    lines = format_pre_alert(no_open, "https://s/")["message"].split(chr(10))
+    assert lines == ["넥스아이 상장 전 · 시초가 경고", "하락 확률 62% (기준 30%)"]      # no pattern, retail-competition or validation line, no ±mae
 
 
 # ---- result digest: one morning summary instead of one alert per stock ----
@@ -193,7 +175,7 @@ def test_eve_digest_groups_all_eve_stocks_into_one_alert():
     groups = group_alerts(due_alerts([a, b], st, kst(2026, 11, 26, 18)))
     assert [i.no for _, i in groups["eve"]] == [11, 12] and groups["result"] == [] and groups["pre"] == []
     p = format_digest("eve", [i for _, i in groups["eve"]], "https://s/")           # (f)
-    assert p["title"] == "내일 청약 2건"
+    assert p["title"] == "공모주 달력" and p["message"].split(chr(10)) == ["내일 청약 · 종목11", "내일 청약 · 종목12"]
 
 
 def verdict_stock(no, sub_start, **kw):
@@ -212,19 +194,17 @@ def test_digest_verdict_wording_and_order():
     clean = verdict_stock(7, "2026-11-18")
     one_unknown = verdict_stock(8, "2026-11-17", unknown_count=1)
     p = format_digest("result", [clean, signals, warn, strong, unknown, model_warn, after_sub, one_unknown], "https://s/")
-    body = p["message"].split("\n")
-    assert p["title"] == "수요예측 결과 8건"
-    assert body[:-1] == [                                                               # (g)
-        "S1 · 강한 하락 경고 · 청약 11/20~11/30",
-        "S3 · 하락 경고 · 청약 11/21~11/30",
-        "S2 · 하락 경고 · 청약 11/22~11/30",
-        "S4 · 하락 경고 · 청약 11/23~11/30",
-        "S8 · 경고 없음 · 청약 11/17~11/30",
-        "S7 · 경고 없음 · 청약 11/18~11/30",
-        "S5 · 경고 없음 (신호 3개) · 청약 11/19~11/30",
-        "S6 · 경고 없음 (확인 불가 2개) · 청약 11/19~11/30",
+    assert p["title"] == "공모주 달력"
+    assert p["message"].split(chr(10)) == [                                              # (g) no header line, no disclaimer
+        "수요예측 결과 · S1 · 강한 경고 · 청약 11/20~30",
+        "수요예측 결과 · S3 · 경고 · 청약 11/21~30",
+        "수요예측 결과 · S2 · 경고 · 청약 11/22~30",
+        "수요예측 결과 · S4 · 경고 · 청약 11/23~30",
+        "수요예측 결과 · S8 · 청약 11/17~30",
+        "수요예측 결과 · S7 · 청약 11/18~30",
+        "수요예측 결과 · S5 · 청약 11/19~30",
+        "수요예측 결과 · S6 · 청약 11/19~30",
     ]
-    assert body[-1] == DISCLAIMER
 
 
 def test_digest_has_no_warning_symbol():
@@ -234,14 +214,77 @@ def test_digest_has_no_warning_symbol():
 
 def test_digest_click_is_the_stock_for_one_and_the_front_page_for_several():
     one = format_digest("result", [NEXI], "https://x.github.io/ipo-alert/")
-    assert one["title"] == "수요예측 결과 1건" and one["click"] == "https://x.github.io/ipo-alert/#2336"   # (i)
+    assert one["title"] == "공모주 달력" and one["click"] == "https://x.github.io/ipo-alert/#2336"   # (i)
     many = format_digest("eve", [NEXI, stock(2)], "https://x.github.io/ipo-alert/")
     assert many["click"] == "https://x.github.io/ipo-alert/"
 
 
-def test_every_digest_ends_with_the_disclaimer_line():
+def test_no_alert_carries_the_disclaimer_line():
+    from datetime import date
+    texts = [format_digest(k, [NEXI, stock(2)], "https://s/")["message"] for k in ("result", "eve")]
+    texts.append(format_daily([NEXI], [NEXI], date(2026, 10, 29), "https://s/")["message"])
+    texts.append(format_daily([], [], date(2026, 10, 29), "https://s/")["message"])
+    texts.append(format_pre_alert(LISTING_SOON, "https://s/")["message"])
+    texts.append(failure_alert("boom")["message"])
+    for text in texts:
+        assert "투자 권유" not in text and "본인이 하세요" not in text
+    import ipo.config
+    assert not hasattr(ipo.config, "DISCLAIMER")
+
+
+def test_every_alert_is_titled_with_the_app_name():
+    from datetime import date
+    alerts = [format_digest("result", [NEXI], "https://s/"), format_digest("eve", [NEXI, stock(2)], "https://s/"),
+              format_daily([NEXI], [NEXI], date(2026, 10, 29), "https://s/"), format_daily([], [], date(2026, 10, 29), "https://s/"),
+              format_pre_alert(LISTING_SOON, "https://s/"), failure_alert("boom")]
+    assert {a["title"] for a in alerts} == {"공모주 달력"} == {APP_NAME}
+
+
+def test_a_stock_without_a_warning_has_no_trailing_separator():
+    clean = verdict_stock(7, "2026-11-18")
+    assert _verdict(clean) == (2, "")
     for kind in ("result", "eve"):
-        assert format_digest(kind, [NEXI, stock(2)], "https://s/")["message"].split("\n")[-1] == DISCLAIMER
+        assert not any(l.endswith(" ·") or l.endswith("· ") for l in format_digest(kind, [clean], "https://s/")["message"].split(chr(10)))
+    assert format_digest("eve", [clean], "https://s/")["message"] == "내일 청약 · S7"
+    assert _line("결과", "S7", "") == "결과 · S7"
+
+
+def test_format_daily_is_three_counts_that_differ_per_line():
+    today = date_(2026, 11, 24)
+    starts_today = [verdict_stock(i, "2026-11-24") for i in (1, 2)]                    # two subscriptions start today
+    running = verdict_stock(3, "2026-11-23", sub_end="2026-11-25")                      # mid-period: not counted
+    lists_today = verdict_stock(4, "2026-11-10", sub_end="2026-11-11", listing_date="2026-11-24")
+    results = [verdict_stock(5, "2026-11-26"), verdict_stock(6, "2026-11-27"), verdict_stock(7, "2026-11-28")]
+    p = format_daily(results, starts_today + [running, lists_today], today, "https://x.github.io/ipo/")
+    assert p == {"title": "공모주 달력", "click": "https://x.github.io/ipo/",
+                 "message": chr(10).join(["수요예측 : 3건", "청약시작 : 2건", "금일상장 : 1건"])}
+
+
+def test_format_daily_with_nothing_sends_the_three_lines_with_zeros():
+    p = format_daily([], [], date_(2026, 11, 24), "https://s/")
+    assert p["message"].split(chr(10)) == ["수요예측 : 0건", "청약시작 : 0건", "금일상장 : 0건"] and p["click"] == "https://s/"
+
+
+def test_format_daily_does_not_count_spacs_or_withdrawn_and_not_mid_period_days():
+    today = date_(2026, 11, 24)
+    ipos = [verdict_stock(1, "2026-11-24", is_spac=True), verdict_stock(2, "2026-11-24", withdrawn=True),
+            verdict_stock(3, "2026-11-24"), verdict_stock(4, "2026-11-20", listing_date="2026-11-24", is_spac=True),
+            verdict_stock(5, "2026-11-20", listing_date="2026-11-24", withdrawn=True),
+            verdict_stock(6, "2026-11-20", sub_end="2026-11-26")]
+    assert format_daily([], ipos, today, "https://s/")["message"].split(chr(10)) == ["수요예측 : 0건", "청약시작 : 1건", "금일상장 : 0건"]
+
+
+def test_span_collapses_the_month_when_it_is_the_same_and_is_none_without_dates():
+    assert _span("2026-11-18", "2026-11-19") == "11/18~19"
+    assert _span("2026-11-28", "2026-12-01") == "11/28~12/1"
+    assert _span("2026-12-30", "2027-01-02") == "12/30~1/2"
+    assert _span("2026-11-18", "2026-11-18") == "11/18"
+    assert _span(None, "2026-11-19") is None and _span("2026-11-18", None) is None and _span(None, None) is None
+
+
+def test_the_result_line_drops_the_span_when_a_date_is_missing():
+    p = format_digest("result", [verdict_stock(7, None, warning="strong")], "https://s/")
+    assert p["message"] == "수요예측 결과 · S7 · 강한 경고"
 
 
 KMF = dict(no=90, name="케이엠에프", sub_start="2026-11-24", sub_end="2026-11-25", inst_competition=None, flag_count=0,
@@ -260,6 +303,5 @@ def test_eve_digest_line_says_the_result_is_not_there_yet_and_sorts_after_stocks
     clean = verdict_stock(7, "2026-11-24")
     p = format_digest("eve", [waiting, clean], "https://s/")
     body = p["message"].split(chr(10))
-    assert body[0] == "S7 · 경고 없음 · 청약 11/24~11/30"                                # (b)
-    assert body[1] == "케이엠에프 · 수요예측 결과 아직 없음 · 청약 11/24~11/25"
-    assert body[-1] == DISCLAIMER
+    assert body[0] == "내일 청약 · S7"                                                  # (b)
+    assert body == ["내일 청약 · S7", "내일 청약 · 케이엠에프 · 결과 전"]

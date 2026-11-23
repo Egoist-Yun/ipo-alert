@@ -38,8 +38,8 @@ def test_a_stock_that_vanished_and_whose_page_is_gone_is_carried_as_withdrawn_wi
     assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=_fetch(GONE), post=rec) == 0
     kept = _ipos(tmp_path)[9001]
     assert kept["withdrawn"] == "2026-11-17" and kept["warning"] is None
-    alerts = [c for c in rec.calls if c["title"] == "공모주 청약 철회"]
-    assert len(alerts) == 1 and alerts[0]["message"] == "철회주 · 청약 11/23~11/24 예정이었어요"
+    alerts = [c for c in rec.calls if c["message"].startswith("청약 철회 · ")]
+    assert len(alerts) == 1 and alerts[0]["title"] == "공모주 달력" and alerts[0]["message"] == "청약 철회 · 철회주 · 11/23~24"
     state = json.loads((tmp_path / "state.json").read_text("utf-8"))
     assert "withdrawn:9001" in state["sent"]
 
@@ -50,7 +50,7 @@ def test_an_already_withdrawn_stock_is_carried_without_a_new_fetch_or_alert(tmp_
     seen, rec = [], Rec()
     assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=_fetch(GONE, seen), post=rec) == 0
     assert seen == [] and _ipos(tmp_path)[9001]["withdrawn"] == "2026-11-17"
-    assert not any(c["title"] == "공모주 청약 철회" for c in rec.calls)
+    assert not any(c["message"].startswith("청약 철회 · ") for c in rec.calls)
 
 
 def test_a_vanished_stock_whose_page_still_exists_is_a_failure_not_a_withdrawal(tmp_path):
@@ -61,7 +61,7 @@ def test_a_vanished_stock_whose_page_still_exists_is_a_failure_not_a_withdrawal(
     kept = {i["no"]: i for i in data["ipos"]}[9001]
     assert kept["withdrawn"] is None                         # kept as it was, to be checked again
     assert any(f["no"] == 9001 and f["error"] == "목록에서 사라짐" for f in data["detail_failures"])
-    assert any(c["title"] == "공모주 상세 수집 일부 실패" for c in rec.calls)
+    assert any(c["message"].startswith("상세 수집 일부 실패 · ") for c in rec.calls)
 
 
 def test_a_failed_fetch_of_the_vanished_stock_is_a_failure_too(tmp_path):
@@ -198,7 +198,7 @@ def test_a_failed_withdrawal_alert_is_retried_next_run(tmp_path):
     assert "withdrawn:9001" not in json.loads((tmp_path / "state.json").read_text("utf-8")).get("sent", [])
     rec = Rec()
     run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=_fetch(GONE), post=rec)
-    assert len([c for c in rec.calls if c["title"] == "공모주 청약 철회"]) == 1
+    assert len([c for c in rec.calls if c["message"].startswith("청약 철회 · ")]) == 1
 
 
 def _stock(**kw):

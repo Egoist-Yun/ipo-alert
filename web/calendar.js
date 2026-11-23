@@ -200,9 +200,10 @@ export function listingAlarms(ipos, applied, nowIso) {
     .filter(x => Date.parse(x.at) > now)
     .sort((a, b) => a.at.localeCompare(b.at) || a.ipo.no - b.ipo.no)
     .map(({ ipo, at }) => {
-      const price = ipo.final_price ? ` 공모가 ${Number(ipo.final_price).toLocaleString('ko-KR')}원` : '';
-      const warn = ipo.warning === 'strong' ? '\n강한 하락 경고가 있어요.' : ipo.warning === 'warn' ? '\n하락 경고가 있어요.' : '';
-      return { id: ipo.no, at, title: `오늘 ${ipo.name} 상장`, body: `시초가 매도 준비.${price}${warn}`, no: ipo.no };
+      const parts = [`오늘 ${ipo.name} 상장`];
+      if (ipo.final_price) parts.push(`공모가 ${Number(ipo.final_price).toLocaleString('ko-KR')}원`);
+      if (ipo.warning === 'strong') parts.push('강한 경고'); else if (ipo.warning === 'warn') parts.push('경고');
+      return { id: ipo.no, at, title: '공모주 달력', body: parts.join(' · '), no: ipo.no };
     });
 }
 
