@@ -12,7 +12,7 @@ from ipo import config
 from ipo.collect import collect_current, detail_failure, detail_url, market_mood
 from ipo.fetch import FetchError, get_html
 from ipo.history import load_history, save_history, update_history
-from ipo.notify import (Target, digest_run, due_alerts, failure_alert, format_digest, format_pre_alert, group_alerts, load_state, mark_digest, mark_sent,
+from ipo.notify import (Target, digest_run, due_alerts, failure_alert, format_digest, format_pre_alert, format_quiet_morning, group_alerts, load_state, mark_digest, mark_sent,
                         save_state,
                         send, target_from_env)
 from ipo.patterns import match_patterns, pattern_stats, warning_level
@@ -232,7 +232,11 @@ def _send_alerts(data_dir: Path, ipos: list, target: Target, site_url: str, now_
         items = groups[kind]
         if not items:
             if kind == "result" and morning:
-                mark_digest(state, now_kst)     # nothing to send this morning: the afternoon run must not act as a second morning
+                try:
+                    send(format_quiet_morning(site_url), target, post=post)
+                except Exception:
+                    traceback.print_exc()
+                mark_digest(state, now_kst)     # sent or not, never retried: the afternoon run must not act as a second morning
                 save_state(path, state)
             continue
         try:

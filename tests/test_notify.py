@@ -51,9 +51,13 @@ def test_zero_flag_still_alerts():
     assert due_alerts([ipo], {"sent": []}, kst(2026, 10, 29, 18))
 
 
-def test_spac_and_no_result_do_not_alert():
+def test_spac_does_not_alert_and_no_result_means_no_result_or_pre_alert():
     assert due_alerts([replace(NEXI, is_spac=True)], {"sent": []}, kst(2026, 10, 29, 18)) == []
-    assert due_alerts([replace(NEXI, inst_competition=None)], {"sent": []}, kst(2026, 10, 29, 18)) == []
+    assert due_alerts([replace(NEXI, inst_competition=None)], {"sent": []}, kst(2026, 10, 29, 18)) == []     # not the eve yet (sub 11/3)
+    waiting = replace(LISTING_SOON, inst_competition=None)                                                      # (pre needs a result too)
+    assert due_alerts([waiting], {"sent": []}, kst(2026, 11, 6, 18)) == []
+    assert due_alerts([replace(NEXI, is_spac=True, inst_competition=None, sub_start="2026-10-30")], {"sent": []}, kst(2026, 10, 29, 18)) == []
+    assert due_alerts([replace(NEXI, withdrawn=True, inst_competition=None, sub_start="2026-10-30")], {"sent": []}, kst(2026, 10, 29, 18)) == []
 
 
 def test_send_posts_json():
@@ -238,3 +242,24 @@ def test_digest_click_is_the_stock_for_one_and_the_front_page_for_several():
 def test_every_digest_ends_with_the_disclaimer_line():
     for kind in ("result", "eve"):
         assert format_digest(kind, [NEXI, stock(2)], "https://s/")["message"].split("\n")[-1] == DISCLAIMER
+
+
+KMF = dict(no=90, name="케이엠에프", sub_start="2026-11-24", sub_end="2026-11-25", inst_competition=None, flag_count=0,
+           unknown_count=0, signals=[], prediction=None, warning=None)
+
+
+def test_eve_alert_goes_out_before_the_demand_forecast_result_but_result_and_pre_do_not():
+    ipo = replace(NEXI, **KMF)
+    due = due_alerts([ipo], {"sent": []}, kst(2026, 11, 23, 12, 30))
+    assert [k for k, _ in due] == ["eve:90"]                                           # (a)
+    assert due_alerts([ipo], {"sent": []}, kst(2026, 11, 23, 11, 59)) == []            # still not before 12:00
+
+
+def test_eve_digest_line_says_the_result_is_not_out_and_sorts_after_stocks_with_a_verdict():
+    waiting = replace(NEXI, **KMF)
+    clean = verdict_stock(7, "2026-11-24")
+    p = format_digest("eve", [waiting, clean], "https://s/")
+    body = p["message"].split(chr(10))
+    assert body[0] == "S7 · 경고 없음 · 청약 11/24~11/30"                                # (b)
+    assert body[1] == "케이엠에프 · 수요예측 결과 미공개 · 청약 11/24~11/25"
+    assert body[-1] == DISCLAIMER

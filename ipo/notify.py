@@ -42,17 +42,18 @@ def due_alerts(ipos: list[Ipo], state: dict, now_kst: datetime) -> list[tuple[st
     digest_time = digest_run(state, now_kst)
     due = []
     for ipo in ipos:
-        if ipo.is_spac or ipo.withdrawn or ipo.inst_competition is None:
+        if ipo.is_spac or ipo.withdrawn:
             continue
+        has_result = ipo.inst_competition is not None   # the eve alert does not wait for the demand-forecast result
         pred = ipo.prediction or {}
         key = f"pre:{ipo.no}"
         not_listed = ipo.first_close is None and (not ipo.listing_date or date.fromisoformat(ipo.listing_date) >= today)
-        if key not in sent and pred.get("open_down") and not_listed:
+        if key not in sent and has_result and pred.get("open_down") and not_listed:
             due.append((key, ipo))
         if ipo.sub_end and date.fromisoformat(ipo.sub_end) < today:
             continue
         key = f"result:{ipo.no}"
-        if key not in sent and (digest_time or _urgent(ipo, today)):
+        if key not in sent and has_result and (digest_time or _urgent(ipo, today)):
             due.append((key, ipo))
         key = f"eve:{ipo.no}"
         if (key not in sent and ipo.sub_start and now_kst.hour >= 12
@@ -85,6 +86,8 @@ def _pattern_line(patterns: list[dict], use_open: bool) -> str | None:
 
 def _verdict(ipo: Ipo) -> tuple[int, str]:
     """(rank, wording): strong warning first, then warning, then the rest. No warning symbol: the words say it."""
+    if ipo.inst_competition is None:
+        return 3, "수요예측 결과 미공개"   # nothing to judge yet: after the stocks with a verdict
     pred = ipo.prediction or {}
     model_warn = bool((pred.get("open_down") or pred.get("prob") or {}).get("warn"))
     if ipo.warning == "strong":
@@ -108,6 +111,11 @@ def format_digest(kind: str, ipos: list[Ipo], site_url: str) -> dict:
     lines.append(DISCLAIMER)
     base = site_url.rstrip("/")
     return {"title": title, "message": "\n".join(lines), "click": f"{base}/#{ipos[0].no}" if len(ipos) == 1 else f"{base}/"}
+
+
+def format_quiet_morning(site_url: str) -> dict:
+    """The morning with no new demand-forecast result. No disclaimer: it states no warning or judgement."""
+    return {"title": "공모주 아침 소식", "message": "오늘 새로 나온 수요예측 결과는 없어요.", "click": f"{site_url.rstrip('/')}/"}
 
 
 def format_pre_alert(ipo: Ipo, site_url: str) -> dict:

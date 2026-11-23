@@ -164,7 +164,7 @@ def test_before_6am_only_the_urgent_result_goes_out_and_it_is_not_the_morning_di
     state = json.loads((tmp_path / "state.json").read_text("utf-8"))
     assert "digest_date" not in state                          # an urgent send is not the day's digest
     assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
-    assert [c["title"] for c in rec.calls] == ["수요예측 결과 1건", "내일 청약 1건"]   # 18:00: only the eve digest is new
+    assert [c["title"] for c in rec.calls] == ["수요예측 결과 1건", "공모주 아침 소식", "내일 청약 1건"]   # 18:00 is the day's first non-urgent run: no new result, so the quiet morning note, then the eve digest
     sent = len(rec.calls)
     assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
     assert len(rec.calls) == sent
@@ -188,13 +188,13 @@ def test_a_morning_run_without_results_still_records_the_digest_date_so_the_afte
     calls, post = _calls()
     waiting = _digest_ipo(1, inst_competition=None)                      # no demand result yet
     _send_alerts(tmp_path, [waiting], Target(topic="t"), "https://s/", datetime(2026, 11, 19, 8, 17, tzinfo=KST), post)
-    assert calls == []
-    assert json.loads((tmp_path / "state.json").read_text("utf-8"))["digest_date"] == "2026-11-19"   # (a) nothing to send: still recorded
+    assert [c["title"] for c in calls] == ["공모주 아침 소식"]            # (a) no new result: the quiet note goes out once
+    assert json.loads((tmp_path / "state.json").read_text("utf-8"))["digest_date"] == "2026-11-19"   # and the day is recorded
     late = _digest_ipo(1)                                                # the result arrives in the afternoon
     _send_alerts(tmp_path, [late], Target(topic="t"), "https://s/", datetime(2026, 11, 19, 17, 47, tzinfo=KST), post)
-    assert [c["title"] for c in calls] == []                            # not today: it waits for tomorrow's morning
+    assert [c["title"] for c in calls] == ["공모주 아침 소식"]            # not today: no second note, the result waits for tomorrow's morning
     _send_alerts(tmp_path, [late], Target(topic="t"), "https://s/", datetime(2026, 11, 20, 8, 17, tzinfo=KST), post)
-    assert [c["title"] for c in calls] == ["수요예측 결과 1건"]
+    assert [c["title"] for c in calls] == ["공모주 아침 소식", "수요예측 결과 1건"]
 
 
 def test_an_urgent_result_still_goes_out_in_the_afternoon_after_an_empty_morning(tmp_path):
@@ -291,3 +291,22 @@ def test_a_ledger_failure_is_reported_in_the_payload_and_by_an_alert_but_the_run
     assert "ledger broke" in data["ledger_error"] and data["ledger"] is None
     alerts = [c for c in rec.calls if c["title"] == "공모주 기록부 갱신 실패"]
     assert len(alerts) == 1 and "ledger broke" in alerts[0]["message"]
+
+
+def test_the_quiet_morning_note_is_tried_once_and_the_day_is_recorded_even_when_the_send_fails(tmp_path):
+    from ipo.main import _send_alerts
+
+    def boom(url, json, timeout):
+        raise RuntimeError("ntfy down")
+    morning = datetime(2026, 11, 19, 8, 17, tzinfo=KST)
+    _send_alerts(tmp_path, [], Target(topic="t"), "https://s/", morning, boom)
+    assert json.loads((tmp_path / "state.json").read_text("utf-8"))["digest_date"] == "2026-11-19"   # (d)
+    calls, post = _calls()
+    _send_alerts(tmp_path, [], Target(topic="t"), "https://s/", datetime(2026, 11, 19, 17, 47, tzinfo=KST), post)
+    assert calls == []                                                   # not retried in the afternoon
+
+
+def test_the_quiet_morning_note_text_and_click():
+    from ipo.notify import format_quiet_morning
+    p = format_quiet_morning("https://s")
+    assert p == {"title": "공모주 아침 소식", "message": "오늘 새로 나온 수요예측 결과는 없어요.", "click": "https://s/"}
