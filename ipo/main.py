@@ -12,7 +12,7 @@ from ipo import config
 from ipo.collect import collect_current, detail_failure, detail_url, market_mood
 from ipo.fetch import FetchError, get_html
 from ipo.history import load_history, save_history, update_history
-from ipo.notify import (Target, digest_run, due_alerts, failure_alert, format_digest, format_pre_alert, format_quiet_morning, group_alerts, load_state, mark_digest, mark_sent,
+from ipo.notify import (Target, digest_run, due_alerts, failure_alert, format_digest, format_daily, format_pre_alert, group_alerts, load_state, mark_digest, mark_sent,
                         save_state,
                         send, target_from_env)
 from ipo.patterns import match_patterns, pattern_stats, warning_level
@@ -228,16 +228,19 @@ def _send_alerts(data_dir: Path, ipos: list, target: Target, site_url: str, now_
     state = load_state(path)
     morning = digest_run(state, now_kst)  # decided before anything is marked
     groups = group_alerts(due_alerts(ipos, state, now_kst))
+    if morning:
+        # The day's one alert (new results, today's subscriptions and listings); a failed send records nothing, so the next run tries again
+        try:
+            send(format_daily([ipo for _, ipo in groups["result"]], ipos, now_kst.date(), site_url), target, post=post)
+        except Exception:
+            traceback.print_exc()
+        else:
+            mark_sent(state, groups["result"])
+            mark_digest(state, now_kst)
+            save_state(path, state)
     for kind in ("result", "eve"):
         items = groups[kind]
-        if not items:
-            if kind == "result" and morning:
-                try:
-                    send(format_quiet_morning(site_url), target, post=post)
-                except Exception:
-                    traceback.print_exc()
-                mark_digest(state, now_kst)     # sent or not, never retried: the afternoon run must not act as a second morning
-                save_state(path, state)
+        if not items or (kind == "result" and morning):    # on a morning the results went out inside the daily alert
             continue
         try:
             send(format_digest(kind, [ipo for _, ipo in items], site_url), target, post=post)
@@ -245,8 +248,6 @@ def _send_alerts(data_dir: Path, ipos: list, target: Target, site_url: str, now_
             traceback.print_exc()
             continue
         mark_sent(state, items)
-        if kind == "result" and morning:
-            mark_digest(state, now_kst)  # only a digest that really went out counts as today's
         save_state(path, state)
     for key, ipo in groups["pre"]:
         try:

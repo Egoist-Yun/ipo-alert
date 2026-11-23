@@ -87,7 +87,7 @@ def _pattern_line(patterns: list[dict], use_open: bool) -> str | None:
 def _verdict(ipo: Ipo) -> tuple[int, str]:
     """(rank, wording): strong warning first, then warning, then the rest. No warning symbol: the words say it."""
     if ipo.inst_competition is None:
-        return 3, "수요예측 결과 미공개"   # nothing to judge yet: after the stocks with a verdict
+        return 3, "수요예측 결과 아직 없음"   # nothing to judge yet (also when the page failed to parse): after the stocks with a verdict
     pred = ipo.prediction or {}
     model_warn = bool((pred.get("open_down") or pred.get("prob") or {}).get("warn"))
     if ipo.warning == "strong":
@@ -113,9 +113,29 @@ def format_digest(kind: str, ipos: list[Ipo], site_url: str) -> dict:
     return {"title": title, "message": "\n".join(lines), "click": f"{base}/#{ipos[0].no}" if len(ipos) == 1 else f"{base}/"}
 
 
-def format_quiet_morning(site_url: str) -> dict:
-    """The morning with no new demand-forecast result. No disclaimer: it states no warning or judgement."""
-    return {"title": "공모주 아침 소식", "message": "오늘 새로 나온 수요예측 결과는 없어요.", "click": f"{site_url.rstrip('/')}/"}
+def format_daily(results: list[Ipo], ipos: list[Ipo], today: date, site_url: str) -> dict:
+    """The one alert every day: new demand-forecast results, then today's subscriptions and listings (SPACs and withdrawn
+    stocks are left out of the last two). A day with none of these says so, without the disclaimer (no judgement in it)."""
+    def order(i: Ipo):
+        return (_verdict(i)[0], i.sub_start or "", i.no)
+
+    live = [i for i in ipos if not i.is_spac and not i.withdrawn]
+    day = today.isoformat()
+    subscribing = [i for i in live if i.sub_start and i.sub_end and i.sub_start <= day <= i.sub_end]
+    listing = [i for i in live if i.listing_date == day]
+    lines = []
+    for i in sorted(results, key=order):
+        span = f"{_md(i.sub_start)}~{_md(i.sub_end)}" if i.sub_start and i.sub_end else "일정 미정"
+        lines.append(f"수요예측 결과 · {i.name} · {_verdict(i)[1]} · 청약 {span}")
+    lines += [f"오늘 청약 · {i.name} · {_verdict(i)[1]}" for i in sorted(subscribing, key=order)]
+    lines += [f"오늘 상장 · {i.name} · {_verdict(i)[1]}" for i in sorted(listing, key=order)]
+    base = site_url.rstrip("/")
+    if not lines:
+        return {"title": "오늘의 공모주 소식", "message": "오늘은 새 수요예측 결과도, 청약·상장 일정도 없어요.", "click": f"{base}/"}
+    shown = {i.no: i for i in [*results, *subscribing, *listing]}
+    lines.append(DISCLAIMER)
+    return {"title": "오늘의 공모주 소식", "message": chr(10).join(lines),
+            "click": f"{base}/#{next(iter(shown))}" if len(shown) == 1 else f"{base}/"}
 
 
 def format_pre_alert(ipo: Ipo, site_url: str) -> dict:

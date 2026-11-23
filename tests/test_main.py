@@ -41,8 +41,9 @@ def test_run_writes_ipos_json_and_alerts_once(tmp_path):
     assert data["disclaimer"].startswith("투자 권유가 아닌")
     ucast = next(i for i in data["ipos"] if i["name"] == "유캐스트")
     assert ucast["flag_count"] >= 1 and ucast["prediction"] is not None
-    digests = [c for c in rec.calls if c["title"].startswith("수요예측 결과")]
-    assert len(digests) == 1 and "유캐스트" in digests[0]["message"]          # one digest, not one alert per stock
+    daily = [c for c in rec.calls if c["title"] == "오늘의 공모주 소식"]
+    assert len(daily) == 1 and "수요예측 결과 · 유캐스트" in daily[0]["message"]   # one daily alert, not one alert per stock
+    assert not any(c["title"].startswith("수요예측 결과") for c in rec.calls)       # (the urgent-only digest is not used on a morning run)
     assert not any("⚠" in c["title"] or "⚠" in c["message"] for c in rec.calls)
     state = json.loads((tmp_path / "state.json").read_text("utf-8"))
     assert state["digest_date"] == "2026-11-17" and any(k.startswith("result:") for k in state["sent"])
@@ -152,7 +153,7 @@ def test_a_failed_digest_send_keeps_the_keys_and_the_digest_date_unchanged(tmp_p
     assert "digest_date" not in state
     rec = Rec()                                    # the next run (ntfy back) sends the same digest
     assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
-    assert any(c["title"].startswith("수요예측 결과") for c in rec.calls)
+    assert any(c["title"] == "오늘의 공모주 소식" for c in rec.calls)
 
 
 def test_before_6am_only_the_urgent_result_goes_out_and_it_is_not_the_morning_digest(tmp_path):
@@ -164,7 +165,8 @@ def test_before_6am_only_the_urgent_result_goes_out_and_it_is_not_the_morning_di
     state = json.loads((tmp_path / "state.json").read_text("utf-8"))
     assert "digest_date" not in state                          # an urgent send is not the day's digest
     assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
-    assert [c["title"] for c in rec.calls] == ["수요예측 결과 1건", "공모주 아침 소식", "내일 청약 1건"]   # 18:00 is the day's first non-urgent run: no new result, so the quiet morning note, then the eve digest
+    assert [c["title"] for c in rec.calls] == ["수요예측 결과 1건", "오늘의 공모주 소식", "내일 청약 1건"]   # 18:00 is the day's first non-urgent run: the daily alert, then the eve digest
+    assert "수요예측 결과 ·" not in rec.calls[1]["message"]            # the result that already went out urgently is not repeated
     sent = len(rec.calls)
     assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
     assert len(rec.calls) == sent
@@ -183,18 +185,19 @@ def _calls():
     return calls, lambda url, json, timeout: calls.append(json)
 
 
-def test_a_morning_run_without_results_still_records_the_digest_date_so_the_afternoon_waits(tmp_path):
+def test_a_morning_run_without_results_still_sends_the_daily_alert_once_so_the_afternoon_waits(tmp_path):
     from ipo.main import _send_alerts
     calls, post = _calls()
     waiting = _digest_ipo(1, inst_competition=None)                      # no demand result yet
     _send_alerts(tmp_path, [waiting], Target(topic="t"), "https://s/", datetime(2026, 11, 19, 8, 17, tzinfo=KST), post)
-    assert [c["title"] for c in calls] == ["공모주 아침 소식"]            # (a) no new result: the quiet note goes out once
+    assert [c["title"] for c in calls] == ["오늘의 공모주 소식"]          # (a) no new result: the daily alert still goes out
     assert json.loads((tmp_path / "state.json").read_text("utf-8"))["digest_date"] == "2026-11-19"   # and the day is recorded
     late = _digest_ipo(1)                                                # the result arrives in the afternoon
     _send_alerts(tmp_path, [late], Target(topic="t"), "https://s/", datetime(2026, 11, 19, 17, 47, tzinfo=KST), post)
-    assert [c["title"] for c in calls] == ["공모주 아침 소식"]            # not today: no second note, the result waits for tomorrow's morning
+    assert [c["title"] for c in calls] == ["오늘의 공모주 소식"]          # not today: no second alert, the result waits for tomorrow's morning
     _send_alerts(tmp_path, [late], Target(topic="t"), "https://s/", datetime(2026, 11, 20, 8, 17, tzinfo=KST), post)
-    assert [c["title"] for c in calls] == ["공모주 아침 소식", "수요예측 결과 1건"]
+    assert [c["title"] for c in calls] == ["오늘의 공모주 소식", "오늘의 공모주 소식"]
+    assert "수요예측 결과 · 종목1" in calls[1]["message"]
 
 
 def test_an_urgent_result_still_goes_out_in_the_afternoon_after_an_empty_morning(tmp_path):
@@ -217,7 +220,7 @@ def test_a_failed_morning_send_is_not_recorded_and_the_afternoon_run_tries_again
     assert "digest_date" not in state and "result:3" not in state["sent"]                       # (b)
     calls, post = _calls()
     _send_alerts(tmp_path, [ipo], Target(topic="t"), "https://s/", datetime(2026, 11, 19, 17, 47, tzinfo=KST), post)
-    assert [c["title"] for c in calls] == ["수요예측 결과 1건"]
+    assert [c["title"] for c in calls] == ["오늘의 공모주 소식"]
     assert json.loads((tmp_path / "state.json").read_text("utf-8"))["digest_date"] == "2026-11-19"
 
 
@@ -293,20 +296,94 @@ def test_a_ledger_failure_is_reported_in_the_payload_and_by_an_alert_but_the_run
     assert len(alerts) == 1 and "ledger broke" in alerts[0]["message"]
 
 
-def test_the_quiet_morning_note_is_tried_once_and_the_day_is_recorded_even_when_the_send_fails(tmp_path):
+def _daily_run(tmp_path, ipos, when, post):
     from ipo.main import _send_alerts
+    _send_alerts(tmp_path, ipos, Target(topic="t"), "https://s/", when, post)
+
+
+def _state(tmp_path):
+    return json.loads((tmp_path / "state.json").read_text("utf-8"))
+
+
+def test_the_daily_alert_lists_results_then_todays_subscriptions_then_listings(tmp_path):     # (a)
+    calls, post = _calls()
+    clean = _digest_ipo(1, name="가나다", sub_start="2026-11-24", sub_end="2026-11-26")
+    warn = _digest_ipo(2, name="라마바", sub_start="2026-11-25", sub_end="2026-11-26", warning="warn")
+    today_sub = _digest_ipo(3, name="사아자", sub_start="2026-11-23", sub_end="2026-11-24", warning="strong")
+    today_listing = _digest_ipo(4, name="차카타", sub_start="2026-11-10", sub_end="2026-11-11", listing_date="2026-11-23")
+    (tmp_path / "state.json").write_text(json.dumps({"sent": ["result:3", "result:4"]}), "utf-8")   # 3 and 4 were announced before
+    _daily_run(tmp_path, [clean, warn, today_sub, today_listing], datetime(2026, 11, 23, 8, 17, tzinfo=KST), post)
+    assert [c["title"] for c in calls] == ["오늘의 공모주 소식"]
+    from ipo.config import DISCLAIMER
+    assert calls[0]["message"].split(chr(10)) == [
+        "수요예측 결과 · 라마바 · 하락 경고 · 청약 11/25~11/26",
+        "수요예측 결과 · 가나다 · 경고 없음 · 청약 11/24~11/26",
+        "오늘 청약 · 사아자 · 강한 하락 경고",
+        "오늘 상장 · 차카타 · 경고 없음",
+        DISCLAIMER]
+    assert {"result:1", "result:2"} <= set(_state(tmp_path)["sent"]) and _state(tmp_path)["digest_date"] == "2026-11-23"
+    print(calls[0]["title"], calls[0]["message"], sep=chr(10))
+
+
+def test_a_day_with_nothing_says_so_in_one_line_without_the_disclaimer(tmp_path):              # (b)
+    calls, post = _calls()
+    _daily_run(tmp_path, [], datetime(2026, 11, 21, 8, 17, tzinfo=KST), post)
+    assert [(c["title"], c["message"], c["click"]) for c in calls] == [
+        ("오늘의 공모주 소식", "오늘은 새 수요예측 결과도, 청약·상장 일정도 없어요.", "https://s/")]
+    print(calls[0]["title"], calls[0]["message"], sep=chr(10))
+
+
+def test_a_first_run_at_18_still_sends_the_daily_alert_and_a_second_run_does_not(tmp_path):    # (c)
+    calls, post = _calls()
+    evening = datetime(2026, 11, 19, 18, 0, tzinfo=KST)
+    _daily_run(tmp_path, [], evening, post)
+    _daily_run(tmp_path, [], evening.replace(hour=19), post)
+    assert [c["title"] for c in calls] == ["오늘의 공모주 소식"]
+
+
+def test_a_failed_daily_send_records_nothing_and_the_next_run_of_the_day_sends_it(tmp_path):    # (d)
+    ipo = _digest_ipo(3)
+    attempts = []
 
     def boom(url, json, timeout):
+        attempts.append(json["title"])
         raise RuntimeError("ntfy down")
-    morning = datetime(2026, 11, 19, 8, 17, tzinfo=KST)
-    _send_alerts(tmp_path, [], Target(topic="t"), "https://s/", morning, boom)
-    assert json.loads((tmp_path / "state.json").read_text("utf-8"))["digest_date"] == "2026-11-19"   # (d)
+    _daily_run(tmp_path, [ipo], datetime(2026, 11, 19, 8, 17, tzinfo=KST), boom)
+    assert attempts == ["오늘의 공모주 소식"]                                      # the send was really tried
+    state = _state(tmp_path) if (tmp_path / "state.json").exists() else {"sent": []}
+    assert "digest_date" not in state and "result:3" not in state["sent"]
     calls, post = _calls()
-    _send_alerts(tmp_path, [], Target(topic="t"), "https://s/", datetime(2026, 11, 19, 17, 47, tzinfo=KST), post)
-    assert calls == []                                                   # not retried in the afternoon
+    _daily_run(tmp_path, [ipo], datetime(2026, 11, 19, 12, 0, tzinfo=KST), post)
+    state = _state(tmp_path)
+    assert [c["title"] for c in calls] == ["오늘의 공모주 소식"] and "수요예측 결과 · 종목3" in calls[0]["message"]
+    assert state["digest_date"] == "2026-11-19" and "result:3" in state["sent"]
 
 
-def test_the_quiet_morning_note_text_and_click():
-    from ipo.notify import format_quiet_morning
-    p = format_quiet_morning("https://s")
-    assert p == {"title": "공모주 아침 소식", "message": "오늘 새로 나온 수요예측 결과는 없어요.", "click": "https://s/"}
+def test_a_result_that_went_out_urgently_at_0559_is_not_repeated_in_the_daily_alert(tmp_path):  # (e)
+    calls, post = _calls()
+    urgent = _digest_ipo(5, sub_start="2026-11-20", sub_end="2026-11-21")
+    _daily_run(tmp_path, [urgent], datetime(2026, 11, 19, 5, 59, tzinfo=KST), post)
+    assert [c["title"] for c in calls] == ["수요예측 결과 1건"]
+    _daily_run(tmp_path, [urgent], datetime(2026, 11, 19, 8, 17, tzinfo=KST), post)
+    assert [c["title"] for c in calls] == ["수요예측 결과 1건", "오늘의 공모주 소식"]
+    assert "수요예측 결과 ·" not in calls[1]["message"]
+
+
+def test_the_daily_alert_leaves_out_spacs_and_withdrawn_stocks_and_says_when_a_result_is_not_there(tmp_path):   # (f)
+    calls, post = _calls()
+    today = dict(sub_start="2026-11-23", sub_end="2026-11-24")
+    waiting = _digest_ipo(1, name="결과없음", inst_competition=None, **today)
+    spac = _digest_ipo(2, name="스팩", is_spac=True, **today)
+    gone = _digest_ipo(3, name="철회", withdrawn=True, **today)
+    listing_spac = _digest_ipo(4, name="스팩상장", is_spac=True, listing_date="2026-11-23")
+    _daily_run(tmp_path, [waiting, spac, gone, listing_spac], datetime(2026, 11, 23, 8, 17, tzinfo=KST), post)
+    lines = calls[0]["message"].split(chr(10))
+    assert lines[0] == "오늘 청약 · 결과없음 · 수요예측 결과 아직 없음"
+    assert len(lines) == 2 and not any(n in calls[0]["message"] for n in ("스팩", "철회"))
+
+
+def test_a_stock_without_a_result_sorts_after_stocks_with_a_verdict_even_with_a_warning_set():   # (g)
+    from ipo.notify import _verdict
+    no_result = _digest_ipo(6, inst_competition=None, warning="strong")
+    assert _verdict(no_result) == (3, "수요예측 결과 아직 없음")
+    assert _verdict(_digest_ipo(7)) < _verdict(no_result)

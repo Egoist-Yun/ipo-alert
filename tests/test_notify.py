@@ -255,11 +255,11 @@ def test_eve_alert_goes_out_before_the_demand_forecast_result_but_result_and_pre
     assert due_alerts([ipo], {"sent": []}, kst(2026, 11, 23, 11, 59)) == []            # still not before 12:00
 
 
-def test_eve_digest_line_says_the_result_is_not_out_and_sorts_after_stocks_with_a_verdict():
+def test_eve_digest_line_says_the_result_is_not_there_yet_and_sorts_after_stocks_with_a_verdict():
     waiting = replace(NEXI, **KMF)
     clean = verdict_stock(7, "2026-11-24")
     p = format_digest("eve", [waiting, clean], "https://s/")
     body = p["message"].split(chr(10))
     assert body[0] == "S7 · 경고 없음 · 청약 11/24~11/30"                                # (b)
-    assert body[1] == "케이엠에프 · 수요예측 결과 미공개 · 청약 11/24~11/25"
+    assert body[1] == "케이엠에프 · 수요예측 결과 아직 없음 · 청약 11/24~11/25"
     assert body[-1] == DISCLAIMER
