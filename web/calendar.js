@@ -298,9 +298,9 @@ export function offerInfoRows(ipo) {
   if (ipo.industry) rows.push({ k: '업종', v: ipo.industry });
   if (ipo.revenue_mil != null) rows.push({ k: '매출액', v: eok(ipo.revenue_mil) });
   if (ipo.net_income_mil != null) rows.push({ k: '순이익', v: eok(ipo.net_income_mil) });
-  if (ipo.demand_start && ipo.demand_end) rows.push({ k: '수요예측', v: `${monthDay(ipo.demand_start)}~${monthDay(ipo.demand_end)}` });
+  if (ipo.demand_start && ipo.demand_end) rows.push({ k: '수요예측', v: `${monthDay(ipo.demand_start)}~${monthDay(ipo.demand_end)}`, tip: 'demand' });
   if (ipo.inst_count != null) rows.push({ k: '참여 기관', v: `${fmtN(ipo.inst_count)}곳` });
-  if (ipo.retail_competition != null) rows.push({ k: '일반청약 경쟁률', v: `${fmtN(Number(ipo.retail_competition.toFixed(2)))}:1` });
+  if (ipo.retail_competition != null) rows.push({ k: '일반청약 경쟁률', v: `${fmtN(Number(ipo.retail_competition.toFixed(2)))}:1`, tip: 'retail_competition' });
   return rows;
 }
 
@@ -388,6 +388,20 @@ export function trustText(w, strong) {
   const p = strong ? w.strong_precision : w.precision;
   return p != null ? `과거 이 경고의 ${Math.round(p * 100)}%가 실제로 하락했어요` : null;
 }
+
+// Plain-words help for the hard terms on the detail screen (keys: signal keys from ipo/signals.py, plus three offering terms).
+// Terms whose words explain themselves (verdict names, warning rule, offer price, deposit) are left out on purpose.
+export const GLOSSARY = {
+  inst_competition: '기관이 사겠다고 한 주식이 배정 물량의 몇 배인지예요. 높을수록 인기가 많고, 낮으면 첫날 공모가 아래로 떨어진 경우가 많았어요.',
+  lockup: '상장 뒤 일정 기간 팔지 않겠다고 약속한 기관 주문 비율이에요. 낮으면 첫날 바로 팔 수 있는 물량이 많아 가격이 눌리기 쉬워요.',
+  below_band: '기관 주문 중 희망 가격 범위의 최저가보다 낮게 써낸 비율이에요. 높으면 기관들이 이 가격을 비싸다고 본다는 뜻이에요.',
+  price_position: '공모가가 희망 가격 범위의 어디서 정해졌는지예요. 상단 이상이면 수요가 강했고, 하단 이하면 수요가 약했다는 뜻이에요.',
+  float: '상장 첫날 바로 팔 수 있는 주식 비율이에요. 높으면 파는 물량이 몰려 가격이 내려가기 쉽고, 낮으면 그 부담이 적어요.',
+  mood: '최근 상장한 공모주 가운데 첫날 공모가 아래로 끝난 비율이에요. 높으면 공모주 시장이 식어 있다는 뜻이에요.',
+  retail_competition: '개인이 신청한 주식이 배정 물량의 몇 배인지예요. 높으면 인기가 많다는 뜻이지만, 그만큼 받는 주식 수는 줄어요.',
+  demand: '청약 전에 기관들이 원하는 가격과 수량을 써내는 절차예요. 이 결과로 공모가가 정해져요.',
+  open_price: '상장 첫날 처음 거래된 가격이에요. 공모가보다 낮으면 손해를 보고 시작해요.',
+};
 
 const LEVEL_TEXT = { strong: '강한 하락 경고', warn: '하락 경고' };
 const levelWas = level => (level ? `${LEVEL_TEXT[level]}였어요` : '경고 없음이었어요');

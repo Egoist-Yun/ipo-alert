@@ -156,7 +156,20 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .sec h3 span { color: var(--danger); }
 .sig { width: 100%; margin-top: var(--space-sm); border-collapse: collapse; font-size: 0.875rem; font-variant-numeric: tabular-nums; }
 .sig th { padding: var(--space-sm) 0; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 0.75rem; font-weight: 400; text-align: right; }
-.sig td { padding: var(--space-md) 0; border-bottom: 1px solid var(--border); color: var(--body); text-align: right; vertical-align: top; }
+.term { padding: 0; font: inherit; color: inherit; text-align: inherit; cursor: pointer;
+  text-decoration: underline dotted var(--muted); text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
+.term:active { transform: none; opacity: 0.6; }
+.has-tip, .kv.has-tip, .fact.has-tip { cursor: pointer; }
+.panel { position: relative; }
+.tip { position: absolute; left: 0; right: 0; z-index: 5; margin: 0; padding: 10px 12px; border-radius: 10px;
+  background: var(--foreground); color: var(--canvas); font-size: 0.875rem; font-weight: 400; line-height: 1.5;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  word-break: keep-all; overflow-wrap: break-word; text-wrap: pretty; }
+.tip[hidden] { display: none; }
+.tip::before { content: ''; position: absolute; left: var(--arrow, 24px); width: 10px; height: 10px; background: inherit; border-radius: 2px; transform: rotate(45deg); }
+.tip.below::before { top: -5px; }
+.tip.above::before { bottom: -5px; }
+.sig td { padding: 11px 0; border-bottom: 1px solid var(--border); color: var(--body); text-align: right; vertical-align: top; }
 .sig th:first-child, .sig td:first-child { text-align: left; }
 .sig td:first-child { padding-right: var(--space-md); color: var(--foreground); }
 .sig td.hit { color: var(--danger); font-weight: 700; }

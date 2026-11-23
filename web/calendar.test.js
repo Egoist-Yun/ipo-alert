@@ -527,9 +527,9 @@ test('offerInfoRows: amount, shares, brokers, industry, financials, demand perio
     { k: '업종', v: '소프트웨어' },
     { k: '매출액', v: '123억 원' },
     { k: '순이익', v: '-36억 원' },
-    { k: '수요예측', v: '11/9~11/13' },
+    { k: '수요예측', v: '11/9~11/13', tip: 'demand' },
     { k: '참여 기관', v: '150곳' },
-    { k: '일반청약 경쟁률', v: '128.46:1' },
+    { k: '일반청약 경쟁률', v: '128.46:1', tip: 'retail_competition' },
   ]);
 });
 
@@ -955,4 +955,16 @@ test('countMarksIn: my listing marks inside a date range', () => {
   const marks = [{ no: 1, date: '2026-11-03' }, { no: 2, date: '2026-11-15' }, { no: 3, date: '2026-11-16' }];
   assert.equal(countMarksIn(marks, '2026-11-01', '2026-11-15'), 2);
   assert.equal(countMarksIn(marks, '2026-11-17', '2026-11-30'), 0);
+});
+
+import { GLOSSARY } from './calendar.js';
+test('GLOSSARY: every hard term has a short plain sentence; self-explaining terms are left out', () => {
+  for (const k of ['price_position', 'inst_competition', 'lockup', 'below_band', 'float', 'mood', 'retail_competition', 'demand', 'open_price']) {
+    assert.ok(GLOSSARY[k], k);
+    assert.ok(GLOSSARY[k].length <= 80, `${k} is ${GLOSSARY[k].length} chars`);
+    assert.ok(GLOSSARY[k].endsWith('요.'), k);
+  }
+  // The exact key list: a self-explaining term (verdict name, warning rule, offer price, deposit) added later fails here.
+  assert.deepEqual(Object.keys(GLOSSARY).sort(),
+    ['demand', 'float', 'inst_competition', 'lockup', 'mood', 'below_band', 'open_price', 'price_position', 'retail_competition'].sort());
 });

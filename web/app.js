@@ -1,4 +1,4 @@
-import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, recordRows, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks, barTone, offerInfoRows, layoutWeek, splitSegments, signalRows, verdictHeader, factGrid, resultGrid, todayStrip, pastWeeks, countBarsIn, showApplyButton, pushPanelState, pushTargetNo, countMarksIn } from './calendar.js';
+import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, recordRows, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks, barTone, offerInfoRows, layoutWeek, splitSegments, signalRows, verdictHeader, GLOSSARY, factGrid, resultGrid, todayStrip, pastWeeks, countBarsIn, showApplyButton, pushPanelState, pushTargetNo, countMarksIn } from './calendar.js';
 import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
 
 const $ = id => document.getElementById(id);
@@ -266,8 +266,62 @@ function segs(text) {
   return parts.flatMap((p, i) => [i ? ' · ' : '', h('span', { class: 'seg' }, p)]);
 }
 
-function kv(k, v, cls) {
-  return h('div', { class: 'kv' }, h('span', { class: 'k' }, k), h('span', { class: `v ${cls || ''}` }, segs(v)));
+// A dotted-underline term: pressing it (or its whole row/cell, see the panel click handler) opens the one speech bubble.
+function term(text, tip) {
+  if (!tip || !GLOSSARY[tip]) return text;
+  return h('button', { type: 'button', class: 'term', 'data-tip': tip, 'aria-expanded': 'false', 'aria-controls': 'tip' }, text);
+}
+
+function kv(k, v, cls, tip) {
+  const t = tip && GLOSSARY[tip] ? tip : null;
+  return h('div', { class: `kv${t ? ' has-tip' : ''}` }, h('span', { class: 'k' }, term(k, t)), h('span', { class: `v ${cls || ''}` }, segs(v)));
+}
+
+// One speech bubble in the panel, reused for every term: below the pressed row/cell, or above it when the visible screen has no room.
+function closeTip() {
+  const box = $('detail');
+  const tip = box.querySelector('.tip');
+  if (tip) tip.hidden = true;
+  for (const b of box.querySelectorAll('.term[aria-expanded="true"]')) b.setAttribute('aria-expanded', 'false');
+}
+
+// Top and bottom of the text lines inside a row/cell (not its padding or table-cell boxes), so the bubble sits close to the words.
+function textExtent(holder) {
+  const walker = document.createTreeWalker(holder, NodeFilter.SHOW_TEXT);
+  let top = Infinity, bottom = -Infinity;
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (!n.data.trim()) continue;
+    const range = document.createRange();
+    range.selectNodeContents(n);
+    for (const rc of range.getClientRects()) { top = Math.min(top, rc.top); bottom = Math.max(bottom, rc.bottom); }
+  }
+  if (top === Infinity) { const r = holder.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; }
+  return { top, bottom };
+}
+
+function toggleTip(holder) {
+  const btn = holder.querySelector('.term');
+  const panel = $('detail').querySelector('.panel');
+  const tip = panel && panel.querySelector('.tip');
+  if (!btn || !tip) return;
+  const wasOpen = btn.getAttribute('aria-expanded') === 'true';
+  closeTip();
+  if (wasOpen) return;
+  tip.textContent = GLOSSARY[btn.dataset.tip];
+  tip.style.visibility = 'hidden';
+  tip.hidden = false;
+  const p = panel.getBoundingClientRect();
+  const { top: textTop, bottom: textBottom } = textExtent(holder);
+  const view = $('v-sub').getBoundingClientRect();
+  // 4px gap between the tail tip and the text, plus the tail's 7px height
+  const below = view.bottom - textBottom >= tip.offsetHeight + 4 + 7 + 16;
+  tip.className = `tip ${below ? 'below' : 'above'}`;
+  tip.style.top = `${below ? textBottom - p.top + 4 + 7 : textTop - p.top - 4 - 7 - tip.offsetHeight}px`;
+  const t = btn.getBoundingClientRect();
+  const arrow = Math.min(Math.max(t.left + t.width / 2 - p.left - 5, 12), p.width - 22);
+  tip.style.setProperty('--arrow', `${arrow}px`);
+  tip.style.visibility = '';
+  btn.setAttribute('aria-expanded', 'true');
 }
 
 function renderDetail() {
@@ -285,7 +339,7 @@ function renderDetail() {
   if (!listed) nodes.push(...factNodes(factGrid(ipo, kstToday()), 'subscribe'));
   // The rest of the offering information is folded (closed by default); rows without a value are not shown.
   const offerRows = offerInfoRows(ipo);
-  if (offerRows.length) nodes.push(h('details', { class: 'drop' }, h('summary', {}, h('span', {}, '공모 정보')), offerRows.map(r => kv(r.k, r.v))));
+  if (offerRows.length) nodes.push(h('details', { class: 'drop' }, h('summary', {}, h('span', {}, '공모 정보')), offerRows.map(r => kv(r.k, r.v, '', r.tip))));
 
   if (!ipo.is_spac && !ipo.withdrawn && ipo.inst_competition != null) {
     nodes.push(...signalNodes(ipo));
@@ -293,7 +347,11 @@ function renderDetail() {
     if (!listed) nodes.push(...modelNodes(ipo));
   }
   if (ipo.url) nodes.push(h('a', { class: 'btn-medium', href: ipo.url, target: '_blank', rel: 'noopener' }, '원문 보기'));
-  box.replaceChildren(h('div', { class: 'panel' }, nodes));
+  nodes.push(h('p', { class: 'tip', id: 'tip', role: 'status', hidden: true }));
+  box.replaceChildren(h('div', { class: 'panel', onclick: ev => {
+    const holder = ev.target.closest('.has-tip');
+    if (holder) toggleTip(holder); else closeTip();
+  } }, nodes));
 }
 
 // The conclusion comes first: a red box for a warning, a plain line otherwise.
@@ -315,10 +373,12 @@ function breakAtTilde(text) {
 
 // A 2-column grid of big numbers (no cards): name, value, small note.
 function factNodes(cells, kind) {
-  return [h('section', { class: `facts ${kind}` }, cells.map(c => h('div', { class: 'fact' },
-    h('p', { class: 'k' }, c.k),
+  return [h('section', { class: `facts ${kind}` }, cells.map(c => {
+    const tip = kind === 'result' && c.k === '시초가' ? 'open_price' : null;
+    return h('div', { class: `fact${tip ? ' has-tip' : ''}` },
+    h('p', { class: 'k' }, term(c.k, tip)),
     h('p', { class: `v${c.unknown ? ' unknown' : ''}` }, breakAtTilde(c.v)),
-    c.s && h('p', { class: `s${c.today ? ' today' : ''}` }, c.s))))];
+    c.s && h('p', { class: `s${c.today ? ' today' : ''}` }, c.s)); }))];
 }
 
 // The risk signals as a 3-column table: signal | this stock | the rule that makes it a risk.
@@ -327,7 +387,7 @@ function signalNodes(ipo) {
   if (!rows.length) return [];
   const table = h('table', { class: 'sig' },
     h('thead', {}, h('tr', {}, h('th', {}, '신호'), h('th', {}, '이 종목'), h('th', {}, '위험 기준'))),
-    h('tbody', {}, rows.map(r => h('tr', {}, h('td', {}, r.label),
+    h('tbody', {}, rows.map(r => h('tr', { class: GLOSSARY[r.key] ? 'has-tip' : null }, h('td', {}, term(r.label, r.key)),
       h('td', { class: r.tone === 'risk' ? 'hit' : r.tone === 'unknown' ? 'unk' : '' }, r.text),
       h('td', { class: 'rule' }, r.rule)))));
   return [h('section', { class: 'sec' }, h('h3', {}, '위험 신호 ', h('span', {}, `${rows.length}개 중 ${ipo.flag_count || 0}개`)), table)];
@@ -379,7 +439,7 @@ function referenceNodes(ipo) {
   for (const [key, label] of [['open', '시초가 예상'], ['close', '첫날 종가 예상']]) {
     const e = p[key];
     if (!e) continue;
-    inner.push(kv(`${label}${e.uses_retail ? ' · 일반청약 반영' : ''} (±${(e.mae * 100).toFixed(0)}%p)`, `${won(e.price)} (${pct(e.return)})`, e.return < 0 ? 'flag' : ''));
+    inner.push(kv(`${label}${e.uses_retail ? ' · 일반청약 반영' : ''} (±${(e.mae * 100).toFixed(0)}%p)`, `${won(e.price)} (${pct(e.return)})`, e.return < 0 ? 'flag' : '', key === 'open' ? 'open_price' : null));
     if (e.price_low != null) inner.push(kv(`범위 · 과거 ${(e.range_coverage * 100).toFixed(0)}% 적중`, `${won(e.price_low)} ~ ${won(e.price_high)}`));
   }
   if (p.knn) {
@@ -547,6 +607,11 @@ async function init() {
   state.canApply = appliedAvailable(localStore());
   state.applied = state.canApply ? readApplied(localStore()) : new Set();
   $('back').addEventListener('click', goBack);
+  // The bubble closes on a press outside the terms, Esc, and scrolling of the detail layer (it is #v-sub that scrolls, not the window).
+  document.addEventListener('click', ev => { if (!ev.target.closest('#detail .panel')) closeTip(); });
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeTip(); });
+  $('v-sub').addEventListener('scroll', closeTip, { passive: true });
+  window.addEventListener('hashchange', closeTip);
   $('record-link').addEventListener('click', ev => { ev.preventDefault(); go('record'); });
   const today = kstToday();
   state.year = Number(today.slice(0, 4));
