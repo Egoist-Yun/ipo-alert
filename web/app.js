@@ -313,8 +313,13 @@ function toggleTip(holder) {
   const p = panel.getBoundingClientRect();
   const { top: textTop, bottom: textBottom } = textExtent(holder);
   const view = $('v-sub').getBoundingClientRect();
-  // 4px gap between the tail tip and the text, plus the tail's 7px height
-  const below = view.bottom - textBottom >= tip.offsetHeight + 4 + 7 + 16;
+  // 4px gap between the tail tip and the text, plus the tail's 7px height. Below when it fits; otherwise above when it fits
+  // under the top bar; when neither fits, on the roomier side (least cover of the top bar).
+  const need = tip.offsetHeight + 4 + 7;
+  const roomBelow = view.bottom - textBottom - 16;
+  const bar = $('v-sub').querySelector('.topbar');
+  const roomAbove = textTop - (bar ? bar.getBoundingClientRect().bottom : view.top);
+  const below = roomBelow >= need || (roomAbove < need && roomBelow >= roomAbove);
   tip.className = `tip ${below ? 'below' : 'above'}`;
   tip.style.top = `${below ? textBottom - p.top + 4 + 7 : textTop - p.top - 4 - 7 - tip.offsetHeight}px`;
   const t = btn.getBoundingClientRect();
@@ -374,7 +379,7 @@ function breakAtTilde(text) {
 // A 2-column grid of big numbers (no cards): name, value, small note.
 function factNodes(cells, kind) {
   return [h('section', { class: `facts ${kind}` }, cells.map(c => {
-    const tip = kind === 'result' && c.k === '시초가' ? 'open_price' : null;
+    const tip = c.tip && GLOSSARY[c.tip] ? c.tip : null;
     return h('div', { class: `fact${tip ? ' has-tip' : ''}` },
     h('p', { class: 'k' }, term(c.k, tip)),
     h('p', { class: `v${c.unknown ? ' unknown' : ''}` }, breakAtTilde(c.v)),
@@ -612,6 +617,7 @@ async function init() {
   document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeTip(); });
   $('v-sub').addEventListener('scroll', closeTip, { passive: true });
   window.addEventListener('hashchange', closeTip);
+  window.addEventListener('resize', closeTip);  // a turned or resized screen re-wraps the text under an open bubble
   $('record-link').addEventListener('click', ev => { ev.preventDefault(); go('record'); });
   const today = kstToday();
   state.year = Number(today.slice(0, 4));

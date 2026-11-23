@@ -469,7 +469,7 @@ export function resultGrid(ipo) {
   const base = ipo.final_price;
   const change = p => `${p >= base ? '+' : ''}${((p / base - 1) * 100).toFixed(0)}%`;
   const cells = [{ k: '공모가', v: `${fmtN(base)}원`, s: '' }];
-  if (ipo.open_price != null) cells.push({ k: '시초가', v: `${fmtN(ipo.open_price)}원`, s: change(ipo.open_price) });
+  if (ipo.open_price != null) cells.push({ k: '시초가', v: `${fmtN(ipo.open_price)}원`, s: change(ipo.open_price), tip: 'open_price' });
   cells.push({ k: '첫날 종가', v: `${fmtN(ipo.first_close)}원`, s: change(ipo.first_close) });
   if (ipo.listing_date) cells.push({ k: '상장일', v: monthDay(ipo.listing_date), s: '' });
   return cells;

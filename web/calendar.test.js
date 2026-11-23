@@ -799,7 +799,8 @@ test('resultGrid: price, open and first close with changes, and the listing day'
   assert.deepEqual(g.map(x => [x.k, x.v, x.s]), [
     ['공모가', '10,000원', ''], ['시초가', '12,000원', '+20%'], ['첫날 종가', '9,000원', '-10%'], ['상장일', '11/30', ''],
   ]);
-  assert.deepEqual(g.map(x => Object.keys(x).sort().join()), Array(4).fill('k,s,v'));   // plain: no colour flag for a fall
+  assert.deepEqual(g.map(x => Object.keys(x).sort().join()), ['k,s,v', 'k,s,tip,v', 'k,s,v', 'k,s,v']);   // plain: no colour flag for a fall; only the open price carries a tip
+  assert.equal(g[1].tip, 'open_price');
   assert.equal(resultGrid({ final_price: 10000, open_price: null, first_close: 9000 }).length, 2);   // no open price, no listing day: just two cells
 });
 
@@ -957,7 +958,15 @@ test('countMarksIn: my listing marks inside a date range', () => {
   assert.equal(countMarksIn(marks, '2026-11-17', '2026-11-30'), 0);
 });
 
-import { GLOSSARY } from './calendar.js';
+import { GLOSSARY, offerInfoRows as offerRowsForTips } from './calendar.js';
+test('every tip key sent by offerInfoRows and resultGrid exists in GLOSSARY (catches a typo)', () => {
+  const rows = offerRowsForTips({ demand_start: '2026-11-09', demand_end: '2026-11-13', retail_competition: 12.3 });
+  const cells = resultGrid({ final_price: 10000, open_price: 12000, first_close: 9000, listing_date: '2026-11-30' });
+  const tips = [...rows, ...cells].map(x => x.tip).filter(Boolean);
+  assert.deepEqual(tips.sort(), ['demand', 'open_price', 'retail_competition']);
+  for (const t of tips) assert.ok(GLOSSARY[t], t);
+});
+
 test('GLOSSARY: every hard term has a short plain sentence; self-explaining terms are left out', () => {
   for (const k of ['price_position', 'inst_competition', 'lockup', 'below_band', 'float', 'mood', 'retail_competition', 'demand', 'open_price']) {
     assert.ok(GLOSSARY[k], k);

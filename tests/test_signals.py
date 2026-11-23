@@ -105,3 +105,17 @@ def test_severity_of_price_position_and_missing_values():
     sig = _by_key(OPTONICS, None)
     assert sig["below_band"]["severity"] is None and sig["float"]["severity"] is None and sig["mood"]["severity"] is None
     assert sig["below_band"]["rule"] == "20% 이상"            # the rule text is shown even when the value is unknown
+
+
+def test_every_signal_key_has_a_glossary_entry_in_the_web_app():
+    """The detail screen shows a help bubble per signal key (web/calendar.js GLOSSARY); a renamed or new key must get one."""
+    import re
+    from pathlib import Path
+    js = (Path(__file__).resolve().parent.parent / "web" / "calendar.js").read_text(encoding="utf-8")
+    block = re.search(r"export const GLOSSARY = \{(.*?)\n\};", js, re.S)
+    assert block, "GLOSSARY block not found in web/calendar.js"
+    glossary = set(re.findall(r"^\s*(\w+):", block.group(1), re.M))
+    assert glossary, "no GLOSSARY keys parsed"
+    keys = set(_by_key(NEXI, 0.6))
+    assert keys == {"price_position", "inst_competition", "lockup", "below_band", "float", "mood"}
+    assert keys <= glossary
