@@ -367,7 +367,7 @@ function verdictNodes(ipo) {
     v.why && h('p', { class: 'why' }, v.why), v.trust && h('p', { class: 'trust' }, v.trust),
     v.shift && v.shift.map((t, i) => h('p', { class: i ? 'shift-note' : 'shift' }, t)));
   // no warning, but the signals and the price prediction disagree
-  return [box, v.conflict && h('p', { class: 'p' }, '신호와 예측이 엇갈려요. 두 가지를 함께 보세요.')].filter(Boolean);
+  return [box, v.conflict && h('p', { class: 'p' }, '예측은 오를 쪽을 보지만, 위험 신호가 많아요.')].filter(Boolean);
 }
 
 // A range like 18,000~25,000원 has no spaces: let it break after the "~" (never inside a number) when the cell is too narrow.

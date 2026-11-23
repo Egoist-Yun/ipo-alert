@@ -740,11 +740,22 @@ test('verdictHeader: warning box, no-warning line, waiting, spac and listed stoc
   assert.equal(verdictHeader({ ...UCAST, is_spac: true }), null);
 });
 
-test('verdictHeader: no warning but risk signals say so in one line, never listing them as the reason', () => {
+test('verdictHeader: no warning but 2+ risk signals gives a grey caution box with the count in the title, never listing the signals', () => {
   const v = verdictHeader({ ...UCAST, warning: null, prediction: {} });
-  assert.equal(v.kind, 'ok');
-  assert.equal(v.why, '위험 신호 6개, 모델 기준으로는 경고 아님');
-  assert.equal(verdictHeader({ ...UCAST, warning: null, signals: [UCAST_SIGNALS[0], { ...UCAST_SIGNALS[1], flag: false }], prediction: {} }).why, '위험 신호 1개, 모델 기준으로는 경고 아님');
+  assert.equal(v.kind, 'caution');
+  assert.equal(v.title, '하락 경고는 아니에요 · 위험\u00a0신호\u00a06개');
+  assert.equal(v.why, '');
+  const one = verdictHeader({ ...UCAST, warning: null, signals: [UCAST_SIGNALS[0], { ...UCAST_SIGNALS[1], flag: false }], prediction: {} });
+  assert.equal(one.kind, 'ok');
+  assert.equal(one.title, '하락 경고 없음');
+  assert.equal(one.why, '위험 신호 1개, 모델 기준으로는 경고 아님');
+});
+
+test('verdictHeader: the caution box starts at exactly 2 risk signals', () => {
+  const two = verdictHeader({ ...UCAST, warning: null, signals: [UCAST_SIGNALS[0], UCAST_SIGNALS[1]], prediction: {} });
+  assert.equal(two.kind, 'caution');
+  assert.equal(two.title, '하락 경고는 아니에요 · 위험\u00a0신호\u00a02개');
+  assert.equal(verdictHeader({ ...UCAST, warning: null, signals: [UCAST_SIGNALS[0]], prediction: {} }).kind, 'ok');
 });
 
 // A stock whose pre-subscription judgment differs from the one after the subscription closed (the open-price model).
@@ -753,16 +764,17 @@ const SHIFT = { ...UCAST, warning: null, warning_pre: 'strong', retail_competiti
 
 test('verdictHeader: the judgment changed after the subscription (strong warning before, none now)', () => {
   const v = verdictHeader(SHIFT);
-  assert.equal(v.kind, 'ok');
-  assert.deepEqual(v.shift, ['시초가 하락 확률 21%, 경고 기준 25%', '청약 전 판정은 강한 하락 경고였어요. 일반청약 경쟁률 172대 1이 반영돼 바뀌었어요']);
+  assert.equal(v.kind, 'caution');   // UCAST carries 6 risk signals
+  assert.deepEqual(v.shift, ['시초가가 공모가보다 낮을 확률 21% (경고\u00a0기준\u00a025%)', '청약 전엔 강한 하락 경고였지만, 일반청약 경쟁률 172대 1을 반영해 경고 없음으로 바뀌었어요.']);
   assert.equal(v.why, '');   // the transition lines replace the risk-signal line
 });
 
 test('verdictHeader: the judgment changed the other way (none before, warning now)', () => {
   const v = verdictHeader({ ...SHIFT, warning: 'warn', warning_pre: null, prediction: { open_down: { p_down: 0.31, threshold: 0.25, warn: true, warned: 16, caught: 10 } } });
   assert.equal(v.kind, 'warn');
-  assert.deepEqual(v.shift, ['시초가 하락 확률 31%, 경고 기준 25%', '청약 전 판정은 경고 없음이었어요. 일반청약 경쟁률 172대 1이 반영돼 바뀌었어요']);
-  assert.equal(verdictHeader({ ...SHIFT, warning: 'warn', warning_pre: 'strong', prediction: SHIFT.prediction }).shift.length, 2);   // strong before, plain warning now: also a change
+  assert.deepEqual(v.shift, ['시초가가 공모가보다 낮을 확률 31% (경고\u00a0기준\u00a025%)', '청약 전엔 경고가 없었지만, 일반청약 경쟁률 172대 1을 반영해 하락 경고로 바뀌었어요.']);
+  const sw = verdictHeader({ ...SHIFT, warning: 'warn', warning_pre: 'strong', prediction: SHIFT.prediction });   // strong before, plain warning now: also a change
+  assert.equal(sw.shift[1], '청약 전엔 강한 하락 경고였지만, 일반청약 경쟁률 172대 1을 반영해 하락 경고로 바뀌었어요.');
 });
 
 test('verdictHeader: no transition lines when both judgments agree, without an open-price model, or in old data', () => {
@@ -771,7 +783,7 @@ test('verdictHeader: no transition lines when both judgments agree, without an o
   assert.equal(verdictHeader({ ...SHIFT, prediction: { prob: { p_down: 0.36 } } }).shift, null);     // before the subscription closed: no open_down
   const old = { ...SHIFT }; delete old.warning_pre;
   assert.equal(verdictHeader(old).shift, null);                                                       // data from before the field existed
-  assert.equal(verdictHeader({ ...SHIFT, retail_competition: null }).shift[1], '청약 전 판정은 강한 하락 경고였어요. 일반청약 경쟁률이 반영돼 바뀌었어요');
+  assert.equal(verdictHeader({ ...SHIFT, retail_competition: null }).shift[1], '청약 전엔 강한 하락 경고였지만, 일반청약 경쟁률을 반영해 경고 없음으로 바뀌었어요.');
 });
 
 test('factGrid: four cells with real values, sub text and unknowns', () => {

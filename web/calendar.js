@@ -403,8 +403,12 @@ export const GLOSSARY = {
   open_price: '상장 첫날 처음 거래된 가격이에요. 공모가보다 낮으면 손해를 보고 시작해요.',
 };
 
-const LEVEL_TEXT = { strong: '강한 하락 경고', warn: '하락 경고' };
-const levelWas = level => (level ? `${LEVEL_TEXT[level]}였어요` : '경고 없음이었어요');
+// Whole phrases per level, so the Korean particles are always right ("경고" + 로, "없음" + 으로).
+const BEFORE = { strong: '강한 하락 경고였지만', warn: '하락 경고였지만', none: '경고가 없었지만' };
+const AFTER = { strong: '강한 하락 경고로', warn: '하락 경고로', none: '경고 없음으로' };
+// Risk signals needed for the grey "caution" box when there is no warning: 2+ signals started below the offer price
+// in 42~53% of past stocks vs 9% for 0~1 (883 stocks, measured 2026-11-24).
+const CAUTION_FLAGS = 2;
 
 // After the subscription closes the judgment follows the open-price model and can differ from the pre-subscription one:
 // two lines say so (shown only when both are known and differ; data from before warning_pre existed shows nothing).
@@ -412,12 +416,15 @@ function judgmentShift(ipo) {
   const od = (ipo.prediction || {}).open_down;
   if (!od || ipo.warning_pre === undefined) return null;
   if ((ipo.warning || null) === (ipo.warning_pre || null)) return null;
-  const retail = ipo.retail_competition != null ? `일반청약 경쟁률 ${Math.round(ipo.retail_competition)}대 1이` : '일반청약 경쟁률이';
-  return [`시초가 하락 확률 ${Math.round(od.p_down * 100)}%, 경고 기준 ${Math.round(od.threshold * 100)}%`,
-    `청약 전 판정은 ${levelWas(ipo.warning_pre)}. ${retail} 반영돼 바뀌었어요`];
+  const retail = ipo.retail_competition != null ? `일반청약 경쟁률 ${Math.round(ipo.retail_competition)}대 1을` : '일반청약 경쟁률을';
+  const pre = ipo.warning_pre || 'none';
+  const now = ipo.warning || 'none';
+  return [`시초가가 공모가보다 낮을 확률 ${Math.round(od.p_down * 100)}% (경고\u00a0기준\u00a0${Math.round(od.threshold * 100)}%)`,   // non-breaking spaces keep the bracket in one piece
+    `청약 전엔 ${BEFORE[pre]}, ${retail} 반영해 ${AFTER[now]} 바뀌었어요.`];
 }
 
-// The verdict header: kind 'warn' (red box), 'ok' (plain line), 'wait' (no demand forecast yet); null for listed stocks and spacs.
+// The verdict header: kind 'warn' (red box), 'caution' (grey box: no warning but 2+ risk signals), 'ok' (plain line),
+// 'wait' (no demand forecast yet); null for listed stocks and spacs.
 export function verdictHeader(ipo) {
   if (ipo.withdrawn) return { kind: 'wait', title: '청약이 철회됐어요', why: '', trust: null, conflict: false, shift: null };
   if (ipo.is_spac || ipo.first_close != null) return null;
@@ -431,6 +438,9 @@ export function verdictHeader(ipo) {
   }
   // no warning: the risk signals are not the reason for anything here, only counted
   const risks = signalRows(ipo).filter(r => r.tone === 'risk').length;
+  if (risks >= CAUTION_FLAGS) {
+    return { kind: 'caution', title: `하락 경고는 아니에요 · 위험\u00a0신호\u00a0${risks}개`, why: '', trust: null, conflict, shift };
+  }
   const why = shift || !risks ? '' : `위험 신호 ${risks}개, 모델 기준으로는 경고 아님`;
   return { kind: 'ok', title: '하락 경고 없음', why, trust: null, conflict, shift };
 }
