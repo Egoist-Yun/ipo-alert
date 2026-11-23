@@ -113,7 +113,7 @@ test('recordRows: counts only, per model, with a pending row and the too-early n
   const r = recordRows({ since: '2026-11-18', pre: model(), post: model({ saved: 0, resolved: 0, pending: 0, warned: 0, caught: 0, n_down: 0 }) });
   assert.deepEqual(r.rows, [
     ['청약 전 모델 (종가 기준)', '경고 2개 중 1개 적중 · 하락 2개 중 1개 포착'],
-    ['청약 전 모델 강한 경고', '1개 중 1개 적중'],
+    ['청약 전 모델 강한 하락 경고', '1개 중 1개 적중'],
     ['청약 전 모델 결과 대기', '1개'],
   ]);
   assert.equal(r.early, true);

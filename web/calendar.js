@@ -96,7 +96,7 @@ export function recordRows(ledger) {
     if (!m || !m.saved) continue;
     const label = RECORD_LABELS[key];
     rows.push([label, `경고 ${m.warned}개 중 ${m.caught}개 적중 · 하락 ${m.n_down}개 중 ${m.caught}개 포착`]);
-    if (m.strong_warned) rows.push([`${label.split(' (')[0]} 강한 경고`, `${m.strong_warned}개 중 ${m.strong_caught}개 적중`]);
+    if (m.strong_warned) rows.push([`${label.split(' (')[0]} 강한 하락 경고`, `${m.strong_warned}개 중 ${m.strong_caught}개 적중`]);
     if (m.pending) rows.push([`${label.split(' (')[0]} 결과 대기`, `${m.pending}개`]);
     if (m.early) early = true;
   }

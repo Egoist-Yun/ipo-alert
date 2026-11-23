@@ -395,3 +395,56 @@ def test_a_stock_without_a_result_sorts_after_stocks_with_a_verdict_even_with_a_
     no_result = _digest_ipo(6, inst_competition=None, warning="strong")
     assert _verdict(no_result) == (3, "대기 중")
     assert _verdict(_digest_ipo(7)) < _verdict(no_result)
+
+
+def _fail(no, name):
+    return {"no": no, "name": name, "error": "x"}
+
+
+def test_failure_message_names_up_to_three_stocks_then_counts_the_rest():
+    from ipo.main import _failure_message
+    head = "일부 종목 정보가 갱신되지 않았어요 · "
+    assert _failure_message([_fail(1, "가"), _fail(2, "나"), _fail(3, "다")]) == head + "가, 나, 다"          # (1) three or fewer
+    assert _failure_message([_fail(i, n) for i, n in enumerate("가나다라마", 1)]) == head + "가, 나, 다 외 2건"   # (2) five: first three + 2 more
+    assert _failure_message([_fail(0, "data/ipos.json")]) == "이전 데이터를 읽지 못했어요"                          # (3) only a file failure
+    assert _failure_message([_fail(1, "가"), _fail(2, "나"), _fail(5, "?")]) == head + "가, 나 외 1건"              # (4) named and unnamed mixed
+    assert _failure_message([_fail(1, "가"), _fail(1, "가"), _fail(2, "나")]) == head + "가, 나"                    # (5) the same name once, first-seen order
+
+
+def test_unnamed_failures_never_put_a_file_name_or_a_question_mark_on_the_phone():
+    from ipo.main import _failure_message
+    text = _failure_message([_fail(0, "data/ipos.json"), _fail(7, "?"), _fail(8, "가")])
+    assert text == "일부 종목 정보가 갱신되지 않았어요 · 가 외 2건" and "ipos.json" not in text and "?" not in text
+
+
+def test_the_ledger_alert_goes_out_once_a_day_and_a_failed_send_is_not_recorded(tmp_path):
+    from ipo.main import _problem_alerts
+    calls, post = _calls()
+    day1, day2 = datetime(2026, 11, 20, 8, 17, tzinfo=KST), datetime(2026, 11, 20, 17, 47, tzinfo=KST)
+    _problem_alerts(Target(topic="t"), [], ["boom"], post, tmp_path, day1)
+    _problem_alerts(Target(topic="t"), [], ["boom"], post, tmp_path, day2)
+    assert [c["message"] for c in calls] == ["실전 성적을 갱신하지 못했어요"]                       # same day twice: once
+    assert _state(tmp_path)["ledger_alert_date"] == "2026-11-20"
+    _problem_alerts(Target(topic="t"), [], ["boom"], post, tmp_path, datetime(2026, 11, 21, 8, 17, tzinfo=KST))
+    assert [c["message"] for c in calls] == ["실전 성적을 갱신하지 못했어요"] * 2                   # next day: again
+
+    def boom(url, json, timeout):
+        raise RuntimeError("ntfy down")
+    _problem_alerts(Target(topic="t"), [], ["boom"], boom, tmp_path, datetime(2026, 11, 22, 8, 17, tzinfo=KST))
+    assert _state(tmp_path)["ledger_alert_date"] == "2026-11-21"                                  # the failed send recorded nothing
+    _problem_alerts(Target(topic="t"), [], ["boom"], post, tmp_path, datetime(2026, 11, 22, 17, 47, tzinfo=KST))
+    assert len(calls) == 3                                                                         # so the next run sends it
+
+
+def test_the_detail_failure_alert_goes_out_every_run(tmp_path):
+    from ipo.main import _problem_alerts
+    calls, post = _calls()
+    for hour in (8, 17):
+        _problem_alerts(Target(topic="t"), [_fail(1, "가")], [], post, tmp_path, datetime(2026, 11, 20, hour, 0, tzinfo=KST))
+    assert [c["message"] for c in calls] == ["일부 종목 정보가 갱신되지 않았어요 · 가"] * 2
+
+
+def test_every_detail_failure_is_printed_to_the_log(tmp_path, capsys):
+    run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=_fetch_with_broken_details({2336}), post=Rec())
+    out = capsys.readouterr().out
+    assert any(l.startswith("detail failure 2336 넥스아이: ") for l in out.splitlines())

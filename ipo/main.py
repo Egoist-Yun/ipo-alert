@@ -202,18 +202,45 @@ def _update_ledger(data_dir: Path, ipos: list, now_kst: datetime, errors: list |
         return None
 
 
-def _problem_alerts(target: Target, failures: list, ledger_errors: list, post) -> None:
-    """Short notices for problems that did not stop the run. A failed notice is only logged."""
-    notices = []
+MAX_NAMED_FAILURES = 3
+
+
+def _failure_message(failures: list) -> str:
+    """The detail-failure notice: up to three stock names, then "외 N건" for the rest. A failure without a real stock
+    (no == 0, or the name is "?") is a failure to read the previous data: it is only counted, never named."""
+    names, unnamed = [], 0
+    for f in failures:
+        name = f.get("name")
+        if not f.get("no") or not name or name == "?":
+            unnamed += 1
+        elif name not in names:
+            names.append(name)
+    if not names:
+        return "이전 데이터를 읽지 못했어요"
+    more = max(len(names) - MAX_NAMED_FAILURES, 0) + unnamed
+    return "일부 종목 정보가 갱신되지 않았어요 · " + ", ".join(names[:MAX_NAMED_FAILURES]) + (f" 외 {more}건" if more else "")
+
+
+def _problem_alerts(target: Target, failures: list, ledger_errors: list, post, data_dir: Path, now_kst: datetime) -> None:
+    """Short notices for problems that did not stop the run. A failed notice is only logged. The detail-failure notice goes
+    out every run (the failing stocks can change); the ledger one once a day, remembered (`ledger_alert_date`) only after it was sent."""
     if failures:
-        notices.append({"title": config.APP_NAME, "message": "일부 종목 정보가 갱신되지 않았어요 · " + ", ".join(f["name"] for f in failures)[:300]})
-    if ledger_errors:
-        notices.append({"title": config.APP_NAME, "message": "실전 성적을 갱신하지 못했어요"})   # the error text is in the log and in ipos.json
-    for notice in notices:
         try:
-            send(notice, target, post=post)
+            send({"title": config.APP_NAME, "message": _failure_message(failures)}, target, post=post)
         except Exception:
             traceback.print_exc()
+    if ledger_errors:
+        path = data_dir / "state.json"
+        state = load_state(path)
+        today = now_kst.date().isoformat()
+        if state.get("ledger_alert_date") != today:
+            try:
+                send({"title": config.APP_NAME, "message": "실전 성적을 갱신하지 못했어요"}, target, post=post)   # the error text is in the log and in ipos.json
+            except Exception:
+                traceback.print_exc()
+            else:
+                state["ledger_alert_date"] = today
+                save_state(path, state)
 
 
 def _send_alerts(data_dir: Path, ipos: list, target: Target, site_url: str, now_kst: datetime, post) -> None:
@@ -284,7 +311,9 @@ def run(data_dir: Path, target: Target | None, site_url: str, now_kst: datetime,
         return 1
 
     if target:
-        _problem_alerts(target, failures, ledger_errors, post)
+        for f in failures:
+            print(f"detail failure {f['no']} {f['name']}: {f['error']}")   # the cause stays in the log (URLs and exception text only)
+        _problem_alerts(target, failures, ledger_errors, post, data_dir, now_kst)
         _withdrawn_alerts(data_dir, ipos, target, post)
         _send_alerts(data_dir, ipos, target, site_url, now_kst, post)
     return 0

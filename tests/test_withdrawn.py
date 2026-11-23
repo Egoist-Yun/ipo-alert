@@ -61,7 +61,7 @@ def test_a_vanished_stock_whose_page_still_exists_is_a_failure_not_a_withdrawal(
     kept = {i["no"]: i for i in data["ipos"]}[9001]
     assert kept["withdrawn"] is None                         # kept as it was, to be checked again
     assert any(f["no"] == 9001 and f["error"] == "목록에서 사라짐" for f in data["detail_failures"])
-    assert any(c["message"].startswith("일부 종목 정보가 갱신되지 않았어요 · ") for c in rec.calls)
+    assert [(c["title"], c["message"]) for c in rec.calls if "갱신되지 않았어요" in c["message"]] == [("공모주 달력", "일부 종목 정보가 갱신되지 않았어요 · 철회주")]
 
 
 def test_a_failed_fetch_of_the_vanished_stock_is_a_failure_too(tmp_path):
