@@ -175,6 +175,7 @@ function showToast(text) {
 const notifier = () => (isNativeApp(window) ? window.Capacitor?.Plugins?.LocalNotifications : undefined);
 const alarmBridge = () => window.Capacitor?.Plugins?.AlarmSync;
 let legacyAlarmCleanup;
+let alarmPermissionUpdated = false;
 
 async function syncNativeAlarms(bridge) {
   if (!state.canApply) return;
@@ -205,6 +206,7 @@ async function ensureAlarmPermission() {
     let perm = await LN.checkPermissions();
     if (perm.display !== 'granted' && perm.display !== 'denied') perm = await LN.requestPermissions();
     state.alarmOff = perm.display !== 'granted';
+    alarmPermissionUpdated = true;
   } catch (e) { console.error(e); }
   return !state.alarmOff;
 }
@@ -665,7 +667,8 @@ async function init() {
   if (bridge) {
     syncNativeAlarms(bridge);
     LN?.checkPermissions().then(perm => {
-      state.alarmOff = perm.display === 'denied';
+      if (alarmPermissionUpdated) return;
+      state.alarmOff = perm.display !== 'granted';
       if (state.selected != null) renderDetail();
     }).catch(console.error);
   }
