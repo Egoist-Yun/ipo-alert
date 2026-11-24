@@ -1,3 +1,5 @@
+import { myBrokerMatches, normalizeBroker } from './brokers.js';
+
 const pad = n => String(n).padStart(2, '0');
 
 function bounds(year, month) {
@@ -202,9 +204,48 @@ export function listingAlarms(ipos, applied, nowIso) {
     .map(({ ipo, at }) => {
       const parts = [`오늘 ${ipo.name} 상장`];
       if (ipo.final_price) parts.push(`공모가 ${Number(ipo.final_price).toLocaleString('ko-KR')}원`);
-      if (ipo.warning === 'strong') parts.push('강한 하락 경고'); else if (ipo.warning === 'warn') parts.push('하락 경고');
+      const warning = alarmWarning(ipo.warning);
+      if (warning) parts.push(warning);
       return { id: ipo.no, at, title: '공모주 달력', body: parts.join(' · '), no: ipo.no };
     });
+}
+
+function alarmWarning(warning) {
+  if (warning === 'strong') return '강한 하락 경고';
+  return warning === 'warn' ? '하락 경고' : '';
+}
+
+const DEADLINE_ID_OFFSET = 1_000_000;
+const MAX_ANDROID_ID = 2_147_483_647;
+
+function validAlarmDate(date) {
+  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || date.startsWith('0000')) return false;
+  const day = new Date(`${date}T00:00:00Z`);
+  return Number.isFinite(day.getTime()) && day.toISOString().slice(0, 10) === date;
+}
+
+// Matches the native Android rules. Old APKs still schedule only listingAlarms().
+export function nativeAlarms(ipos, applied, myBrokers, nowIso) {
+  const now = Date.parse(nowIso);
+  if (!Number.isFinite(now)) return [];
+  const stocks = ipos.filter(i => Number.isInteger(i.no) && i.no > 0 && i.no <= MAX_ANDROID_ID);
+  const alarms = listingAlarms(stocks.filter(i => validAlarmDate(i.listing_date)), applied, nowIso);
+  const mine = new Set([...myBrokers].map(normalizeBroker).filter(Boolean));
+  if (!mine.size) return alarms;
+
+  for (const ipo of stocks) {
+    if (applied.has(ipo.no) || ipo.withdrawn || ipo.first_close != null ||
+        ipo.no > MAX_ANDROID_ID - DEADLINE_ID_OFFSET || !validAlarmDate(ipo.sub_end)) continue;
+    const at = `${ipo.sub_end}T14:00:00+09:00`;
+    if (Date.parse(at) <= now) continue;
+    const brokers = myBrokerMatches(ipo, mine);
+    if (!brokers.length) continue;
+    const body = ['오늘 청약 마감', ipo.name, brokers.join(', ')];
+    const warning = alarmWarning(ipo.warning);
+    if (warning) body.push(warning);
+    alarms.push({ id: DEADLINE_ID_OFFSET + ipo.no, at, title: '공모주 달력', body: body.join(' · '), no: ipo.no });
+  }
+  return alarms.sort((a, b) => a.at.localeCompare(b.at) || a.id - b.id);
 }
 
 // Text of a calendar bar: the name, "⚠ " in front for a risk stock, "✓ " in front of that when marked as applied.

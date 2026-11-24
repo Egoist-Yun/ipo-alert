@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { monthGrid, barsForMonth, listForMonth, needsRefresh, splitSegments, signalRows, evidenceLine, trustText, verdictHeader, factGrid, resultGrid, todayStrip, pastWeeks, countBarsIn, showApplyButton, pushPanelState, pushTargetNo, countMarksIn, UPCOMING_DAYS } from './calendar.js';
 
 const A = { no: 77, name: 'A', sub_start: '2026-11-27', sub_end: '2026-11-30', flag_count: 2, is_spac: false };
@@ -293,7 +294,20 @@ test('listingLabel: the sell day, or unknown', () => {
   assert.equal(listingLabel({}), '상장일 미정');
 });
 
-import { listingAlarms } from './calendar.js';
+import { listingAlarms, nativeAlarms } from './calendar.js';
+
+const alarmFixture = JSON.parse(readFileSync(new URL('../tests/fixtures/alarms_case.json', import.meta.url), 'utf8'));
+
+test('nativeAlarms: shared Android fixture', () => {
+  const { ipos, applied, myBrokers, now, expected } = alarmFixture;
+  assert.deepEqual(nativeAlarms(ipos, new Set(applied), new Set(myBrokers), now), expected);
+});
+
+test('nativeAlarms: no selected brokers leaves listing alarms only', () => {
+  const { ipos, applied, now, expected } = alarmFixture;
+  assert.deepEqual(nativeAlarms(ipos, new Set(applied), new Set(), now),
+    expected.filter(alarm => alarm.id === alarm.no));
+});
 
 const L = (no, listing_date, extra = {}) => ({ no, name: `S${no}`, listing_date, final_price: 19000, ...extra });
 const NOV30 = '2026-11-30';

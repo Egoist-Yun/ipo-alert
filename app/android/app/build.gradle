@@ -16,6 +16,9 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    sourceSets {
+        test.resources.srcDir '../../../tests/fixtures'
+    }
     buildTypes {
         release {
             minifyEnabled false
@@ -38,7 +41,9 @@ dependencies {
     implementation project(':capacitor-android')
     // the push plugin brings it as an implementation dependency, which this module cannot see: MainActivity subscribes to the topic
     implementation "com.google.firebase:firebase-messaging:$firebaseMessagingVersion"
+    implementation "androidx.work:work-runtime:2.11.2"
     testImplementation "junit:junit:$junitVersion"
+    testImplementation "org.json:json:20250517"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')

@@ -1,0 +1,30 @@
+{
+  "now": "2026-11-24T14:00:00+09:00",
+  "applied": [1, 4, 5, 6, 1000002, 2147483647],
+  "myBrokers": [" ㈜ 케이비증권 ", "NH투자증권", "IBK투자증권", "유진투자증권", "미래에셋증권"],
+  "ipos": [
+    {"no": 1, "name": "상장주", "listing_date": "2026-11-25", "sub_end": "2026-11-25", "underwriters": ["KB증권"], "final_price": 12345, "warning": "strong"},
+    {"no": 2, "name": "마감주", "sub_end": "2026-11-25", "first_close": null, "underwriters": ["(주)KB증권", "케이비증권", "엔에이치 투자증권", "아이비케이투자증권", "유진증권", "미래에셋대우", "신영증권"], "warning": "warn"},
+    {"no": 3, "name": "이미 14시", "sub_end": "2026-11-24", "underwriters": ["KB증권"]},
+    {"no": 4, "name": "오늘 8시 30분 경과", "listing_date": "2026-11-24"},
+    {"no": 5, "name": "상장 철회", "listing_date": "2026-11-25", "withdrawn": true},
+    {"no": 6, "name": "상장일 미정", "sub_end": "2026-11-25", "underwriters": ["KB증권"]},
+    {"no": 7, "name": "청약 철회", "sub_end": "2026-11-25", "underwriters": ["KB증권"], "withdrawn": true},
+    {"no": 8, "name": "이미 상장", "sub_end": "2026-11-25", "underwriters": ["KB증권"], "first_close": 0},
+    {"no": 9, "name": "청약 마감일 미정", "sub_end": null, "underwriters": ["KB증권"]},
+    {"no": 10, "name": "관심 증권사 없음", "sub_end": "2026-11-25", "underwriters": ["신영증권"]},
+    {"no": 11, "name": "잘못된 날짜", "sub_end": "2027-02-29", "underwriters": ["KB증권"]},
+    {"no": 1000002, "name": "ID가 마감 알림과 같은 상장주", "listing_date": "2026-11-25"},
+    {"no": 2146483647, "name": "마감 ID 상한", "sub_end": "2026-11-25", "underwriters": ["KB증권"], "warning": "strong"},
+    {"no": 2146483648, "name": "마감 ID 상한 초과", "sub_end": "2026-11-25", "underwriters": ["KB증권"]},
+    {"no": 2147483647, "name": "상장 ID 상한", "listing_date": "2026-11-26"},
+    {"no": 0, "name": "잘못된 종목 번호", "sub_end": "2026-11-25", "underwriters": ["KB증권"]}
+  ],
+  "expected": [
+    {"id": 1, "no": 1, "at": "2026-11-25T08:30:00+09:00", "title": "공모주 달력", "body": "오늘 상장주 상장 · 공모가 12,345원 · 강한 하락 경고"},
+    {"id": 1000002, "no": 1000002, "at": "2026-11-25T08:30:00+09:00", "title": "공모주 달력", "body": "오늘 ID가 마감 알림과 같은 상장주 상장"},
+    {"id": 1000002, "no": 2, "at": "2026-11-25T14:00:00+09:00", "title": "공모주 달력", "body": "오늘 청약 마감 · 마감주 · KB증권, NH투자증권, IBK투자증권, 유진투자증권, 미래에셋증권 · 하락 경고"},
+    {"id": 2147483647, "no": 2146483647, "at": "2026-11-25T14:00:00+09:00", "title": "공모주 달력", "body": "오늘 청약 마감 · 마감 ID 상한 · KB증권 · 강한 하락 경고"},
+    {"id": 2147483647, "no": 2147483647, "at": "2026-11-26T08:30:00+09:00", "title": "공모주 달력", "body": "오늘 상장 ID 상한 상장"}
+  ]
+}

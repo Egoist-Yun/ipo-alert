@@ -171,8 +171,32 @@ function showToast(text) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
 }
 
-// Listing-day alarm (Android app only; the notification plugin exists only in the native shell). Everything stays on the device.
+// Alarm preferences stay on this device.
 const notifier = () => (isNativeApp(window) ? window.Capacitor?.Plugins?.LocalNotifications : undefined);
+const alarmBridge = () => window.Capacitor?.Plugins?.AlarmSync;
+let legacyAlarmCleanup;
+
+async function syncNativeAlarms(bridge) {
+  if (!state.canApply) return;
+  try {
+    await bridge.setState({ applied: [...state.applied], myBrokers: [...state.myBrokers] });
+    legacyAlarmCleanup ??= cancelLegacyAlarms().catch(e => {
+      legacyAlarmCleanup = undefined;
+      console.error(e);
+    });
+    await legacyAlarmCleanup;
+  } catch (e) { console.error(e); }
+}
+
+async function cancelLegacyAlarms() {
+  const LN = notifier();
+  const storage = localStore();
+  const key = 'ipo-native-alarms-migrated';
+  if (!LN || storage.getItem(key)) return;
+  const pending = (await LN.getPending()).notifications || [];
+  if (pending.length) await LN.cancel({ notifications: pending.map(({ id }) => ({ id })) });
+  storage.setItem(key, '1');
+}
 
 async function ensureAlarmPermission() {
   const LN = notifier();
@@ -219,7 +243,8 @@ function appliedNodes(ipo) {
       saveApplied(localStore(), state.applied);
       renderDetail();
       if (state.applied.has(ipo.no)) await ensureAlarmPermission();  // asked the first time a stock is marked
-      await syncListingAlarms();
+      const bridge = alarmBridge();
+      if (bridge) await syncNativeAlarms(bridge); else await syncListingAlarms();
       renderDetail();
       // Tell what marking did: confirmed alarm, off, not available in a browser, or promised for a stock without a listing date.
       if (state.applied.has(ipo.no)) {
@@ -346,6 +371,8 @@ function renderDetail() {
       onclick: () => {
         state.myBrokers = toggleMyBroker(state.myBrokers, name);
         saveMyBrokers(localStore(), state.myBrokers);
+        const bridge = alarmBridge();
+        if (bridge) syncNativeAlarms(bridge);
         renderList();
         renderDetail();
         box.querySelectorAll('.broker-chip')[index].focus({ preventScroll: true });
@@ -634,6 +661,14 @@ async function init() {
   state.canApply = appliedAvailable(localStore());
   state.applied = state.canApply ? readApplied(localStore()) : new Set();
   state.myBrokers = state.canApply ? readMyBrokers(localStore()) : new Set();
+  const bridge = alarmBridge();
+  if (bridge) {
+    syncNativeAlarms(bridge);
+    LN?.checkPermissions().then(perm => {
+      state.alarmOff = perm.display === 'denied';
+      if (state.selected != null) renderDetail();
+    }).catch(console.error);
+  }
   $('back').addEventListener('click', goBack);
   // The bubble closes on a press outside the terms, Esc, and scrolling of the detail layer (it is #v-sub that scrolls, not the window).
   document.addEventListener('click', ev => { if (!ev.target.closest('#detail .panel')) closeTip(); });
@@ -663,7 +698,7 @@ async function init() {
   window.addEventListener('hashchange', route);
   window.addEventListener('popstate', route);
   route();
-  syncListingAlarms();
+  if (!bridge) syncListingAlarms();
   initPush();
 }
 
