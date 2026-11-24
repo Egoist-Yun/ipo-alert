@@ -1,6 +1,8 @@
 import json
 from datetime import datetime
 
+import pytest
+
 from ipo.config import KST
 from ipo.main import run
 from ipo.notify import Target
@@ -83,6 +85,17 @@ def test_failure_keeps_old_file_and_alerts(tmp_path):
     assert code != 0
     assert json.loads((tmp_path / "ipos.json").read_text("utf-8"))["ipos"] == [{"no": 1}]
     assert (rec.calls[-1]["title"], rec.calls[-1]["message"]) == ("공모주 달력", "앱 정보가 최신이 아닐 수 있어요. 다음 갱신 때 다시 시도해요.")
+
+
+def test_quiet_hours_failure_keeps_old_file_without_alerting(tmp_path, capsys):
+    previous = '{"ipos":[]}'
+    (tmp_path / "ipos.json").write_text(previous, "utf-8")
+    rec = Rec()
+    code = run(tmp_path, Target(topic="t"), "", NOW.replace(hour=3), fetch=lambda u: "<html></html>", post=rec)
+    assert code == 1
+    assert rec.calls == []
+    assert (tmp_path / "ipos.json").read_text("utf-8") == previous
+    assert capsys.readouterr().out.count("quiet hours (22-07 KST): alerts deferred") == 1
 
 
 def test_calendar_range_drops_old_stocks(tmp_path):
@@ -173,20 +186,63 @@ def test_a_failed_digest_send_keeps_the_keys_and_the_digest_date_unchanged(tmp_p
     assert "daily" in _kinds(rec.calls)
 
 
-def test_before_6am_only_the_urgent_result_goes_out_and_it_is_not_the_morning_digest(tmp_path):
-    early = datetime(2026, 11, 17, 5, 59, tzinfo=KST)
+@pytest.mark.parametrize("hour,minute,quiet", [(21, 59, False), (22, 0, True), (6, 59, True), (7, 0, False)])
+def test_quiet_hours_boundaries(tmp_path, hour, minute, quiet):
+    from ipo import main
+
+    now = NOW.replace(hour=hour, minute=minute)
     rec = Rec()
-    assert run(tmp_path, Target(topic="t"), "https://s/", early, fetch=fake_fetch, post=rec) == 0
-    # the fixture's stock subscribes tomorrow (11/18): its result cannot wait, so it goes out even before 06:00
-    assert _kinds(rec.calls) == ["result"] and "유캐스트" in rec.calls[0]["message"]
-    state = json.loads((tmp_path / "state.json").read_text("utf-8"))
-    assert "digest_date" not in state                          # an urgent send is not the day's digest
-    assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
-    assert _kinds(rec.calls) == ["result", "daily", "eve"]   # 18:00 is the day's first non-urgent run: the daily alert, then the eve digest
-    assert rec.calls[1]["message"].split(chr(10))[0] == "수요예측 : 0건"   # the result that already went out urgently is not repeated
-    sent = len(rec.calls)
-    assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=fake_fetch, post=rec) == 0
-    assert len(rec.calls) == sent
+    assert run(tmp_path, Target(topic="t"), "", now, fetch=fake_fetch, post=rec) == 0
+    if quiet:
+        assert rec.calls == []
+    else:
+        assert "daily" in _kinds(rec.calls)
+    assert main.quiet_hours(now) is quiet
+
+
+def test_quiet_hours_defer_result_and_withdrawal_until_morning(tmp_path, capsys):
+    previous = {"no": 9999, "name": "철회종목", "url": "", "sub_start": "2026-11-18", "withdrawn": "2026-11-17"}
+    (tmp_path / "ipos.json").write_text(json.dumps({"ipos": [previous]}), "utf-8")
+    state_path = tmp_path / "state.json"
+    state_path.write_text("{}", "utf-8")
+    rec = Rec()
+    target = Target(topic="t")
+    assert run(tmp_path, target, "", NOW.replace(hour=3), fetch=fake_fetch, post=rec) == 0
+    assert rec.calls == []
+    assert _state(tmp_path) == {}
+    data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
+    assert data["updated_at"] == "2026-11-17T03:00:00+09:00"
+    assert any(i["no"] == 9999 and i["withdrawn"] for i in data["ipos"])
+    assert (tmp_path / "history.json").exists() and (tmp_path / "predictions.json").exists()
+    assert capsys.readouterr().out.count("quiet hours (22-07 KST): alerts deferred") == 1
+
+    assert run(tmp_path, target, "", NOW.replace(hour=8), fetch=fake_fetch, post=rec) == 0
+    assert any(c["message"].startswith("청약 철회") and "철회종목" in c["message"] for c in rec.calls)
+    assert [c["message"].splitlines()[0] for c in rec.calls if _kind(c) == "daily"] == ["수요예측 : 1건"]
+    state = _state(tmp_path)
+    assert {"result:2352", "withdrawn:9999"} <= set(state["sent"])
+    assert state["digest_date"] == "2026-11-17"
+
+
+@pytest.mark.parametrize("hour,expected_alerts", [(3, 0), (8, 1)])
+def test_main_respects_quiet_hours_for_invalid_fcm_warning(monkeypatch, hour, expected_alerts):
+    from ipo import main, notify
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz):
+            return NOW.replace(hour=hour)
+
+    alerts = []
+    monkeypatch.setenv("NTFY_TOPIC", "t")
+    monkeypatch.setenv("FCM_SERVICE_ACCOUNT", "invalid-json")
+    monkeypatch.setattr(main, "datetime", Clock)
+    monkeypatch.setattr(main, "run", lambda *args: 0)
+    monkeypatch.setattr(notify, "_ntfy", lambda payload, topic, post: alerts.append(payload))
+    with pytest.raises(SystemExit) as exc:
+        main.main()
+    assert exc.value.code == 0
+    assert len(alerts) == expected_alerts
 
 
 def _digest_ipo(no, **kw):
@@ -291,6 +347,24 @@ def test_mostly_broken_detail_pages_fail_the_run_and_keep_the_old_file(tmp_path)
     assert run(tmp_path, Target(topic="t"), "https://s/", NOW, fetch=_fetch_with_broken_details(), post=rec) == 1
     assert json.loads((tmp_path / "ipos.json").read_text("utf-8"))["ipos"] == [{"no": 1}]
     assert (rec.calls[-1]["title"], rec.calls[-1]["message"]) == ("공모주 달력", "앱 정보가 최신이 아닐 수 있어요. 다음 갱신 때 다시 시도해요.")   # no error text on the phone
+
+
+def test_quiet_hours_keep_problem_alerts_in_the_payload_and_logs(tmp_path, monkeypatch, capsys):
+    from ipo import main
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("ledger broke")
+
+    monkeypatch.setattr(main, "record_predictions", boom)
+    rec = Rec()
+    fetch = _fetch_with_broken_details({2336})
+    assert run(tmp_path, Target(topic="t"), "", NOW.replace(hour=3), fetch=fetch, post=rec) == 0
+    data = json.loads((tmp_path / "ipos.json").read_text("utf-8"))
+    assert data["detail_failures"][0]["no"] == 2336
+    assert "ledger broke" in data["ledger_error"]
+    assert "detail failure 2336" in capsys.readouterr().out
+    assert rec.calls == []
+    assert not (tmp_path / "state.json").exists()
 
 
 def test_a_failed_problem_alert_is_only_logged(tmp_path):

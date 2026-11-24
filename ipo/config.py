@@ -14,6 +14,10 @@ from datetime import timedelta, timezone
 
 KST = timezone(timedelta(hours=9))  # fixed offset: Windows lacks a tz database by default
 
+# Keep delayed workflow runs from waking users overnight (KST).
+QUIET_START = 22
+QUIET_END = 7
+
 K_NEIGHBORS = 10
 RIDGE_ALPHA = 1.0
 RETURN_MIN = -0.40

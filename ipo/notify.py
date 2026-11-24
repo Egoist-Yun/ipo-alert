@@ -16,8 +16,8 @@ FAILURE_MESSAGE = "앱 정보가 최신이 아닐 수 있어요. 다음 갱신 �
 
 
 def digest_run(state: dict, now_kst: datetime) -> bool:
-    """The morning digest goes out on the first run from 06:00 KST each day (GitHub's schedule can be hours late, so
-    "before noon" would lose a whole day). `digest_date` in the state remembers the day it was sent."""
+    """The morning digest is eligible from 06:00 KST, and collector quiet hours permit sending from 07:00 KST.
+    There is no noon cutoff because scheduled runs can start hours late. `digest_date` records the last send date."""
     return now_kst.hour >= 6 and state.get("digest_date") != now_kst.date().isoformat()
 
 
@@ -166,9 +166,9 @@ def send(payload: dict, target: Target, post=requests.post) -> None:
     _ntfy(payload, target.topic, post)
 
 
-def target_from_env(env=None, post=requests.post) -> Target:
+def target_from_env(env=None, post=requests.post, *, warn_on_invalid_fcm: bool = True) -> Target:
     """Target from NTFY_TOPIC and FCM_SERVICE_ACCOUNT (JSON text). An unreadable service account turns FCM
-    off and, when ntfy is set, says so once through ntfy. Values are never printed."""
+    off and, when ntfy is set and warnings are enabled, says so once through ntfy. Values are never printed."""
     env = os.environ if env is None else env
     topic = env.get("NTFY_TOPIC") or None
     raw = env.get("FCM_SERVICE_ACCOUNT") or None
@@ -181,7 +181,7 @@ def target_from_env(env=None, post=requests.post) -> Target:
         except Exception as e:
             print(f"FCM_SERVICE_ACCOUNT unreadable ({type(e).__name__}): FCM is off")
             sa = None
-            if topic:
+            if topic and warn_on_invalid_fcm:
                 try:
                     _ntfy({"title": APP_NAME,
                            "message": "설정 오류 · FCM_SERVICE_ACCOUNT를 읽지 못해 ntfy로만 보내요"}, topic, post)

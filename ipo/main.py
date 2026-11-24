@@ -282,8 +282,15 @@ def _send_alerts(data_dir: Path, ipos: list, target: Target, site_url: str, now_
     save_state(path, state)
 
 
+def quiet_hours(now_kst: datetime) -> bool:
+    return now_kst.hour >= config.QUIET_START or now_kst.hour < config.QUIET_END
+
+
 def run(data_dir: Path, target: Target | None, site_url: str, now_kst: datetime,
         fetch=get_html, post=requests.post) -> int:
+    quiet = quiet_hours(now_kst)
+    if quiet:
+        print(f"quiet hours ({config.QUIET_START:02d}-{config.QUIET_END:02d} KST): alerts deferred")
     data_dir = Path(data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
     try:
@@ -303,7 +310,7 @@ def run(data_dir: Path, target: Target | None, site_url: str, now_kst: datetime,
         _atomic_write(data_dir / "ipos.json", json.dumps(payload, ensure_ascii=False))
     except Exception:
         traceback.print_exc()
-        if target:
+        if target and not quiet:
             try:
                 send(failure_alert(), target, post=post)   # the error is in the log above, not in the alert
             except Exception:
@@ -313,14 +320,17 @@ def run(data_dir: Path, target: Target | None, site_url: str, now_kst: datetime,
     if target:
         for f in failures:
             print(f"detail failure {f['no']} {f['name']}: {f['error']}")   # the cause stays in the log (URLs and exception text only)
-        _problem_alerts(target, failures, ledger_errors, post, data_dir, now_kst)
-        _withdrawn_alerts(data_dir, ipos, target, post)
-        _send_alerts(data_dir, ipos, target, site_url, now_kst, post)
+        if not quiet:
+            _problem_alerts(target, failures, ledger_errors, post, data_dir, now_kst)
+            _withdrawn_alerts(data_dir, ipos, target, post)
+            _send_alerts(data_dir, ipos, target, site_url, now_kst, post)
     return 0
 
 
 def main() -> None:
-    code = run(Path("data"), target_from_env(), os.environ.get("SITE_URL", ""), datetime.now(config.KST))
+    now_kst = datetime.now(config.KST)
+    target = target_from_env(warn_on_invalid_fcm=not quiet_hours(now_kst))
+    code = run(Path("data"), target, os.environ.get("SITE_URL", ""), now_kst)
     sys.exit(code)
 
 
