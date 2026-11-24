@@ -1,9 +1,9 @@
 import { monthGrid, barsForMonth, badgeInfo, staleHours, needsRefresh, recordRows, parseRoute, groupForList, listingLabel, readApplied, saveApplied, appliedAvailable, toggleApplied, listingAlarms, barLabel, markToast, dayStatus, listingMarks, barTone, offerInfoRows, layoutWeek, splitSegments, signalRows, verdictHeader, GLOSSARY, factGrid, resultGrid, todayStrip, pastWeeks, countBarsIn, showApplyButton, pushPanelState, pushTargetNo, countMarksIn } from './calendar.js';
-import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp } from './brokers.js';
+import { brokerLinks, showBrokerButtons, isAndroid, brokerAction, isNativeApp, normalizeBroker, readMyBrokers, saveMyBrokers, toggleMyBroker, myBrokerMatches } from './brokers.js';
 
 const $ = id => document.getElementById(id);
 const loadedAt = Date.now();
-const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null, ledger: null, routed: false, applied: new Set(), canApply: false, alarmOff: false, doneOpen: false, pastOpen: false, pastKey: '', push: { perm: null } };
+const state = { ipos: [], accuracyNote: null, year: 0, month: 0, selected: null, ledger: null, routed: false, applied: new Set(), myBrokers: new Set(), hintNo: null, canApply: false, alarmOff: false, doneOpen: false, pastOpen: false, pastKey: '', push: { perm: null } };
 
 function h(tag, props, ...kids) {
   const el = document.createElement(tag);
@@ -127,9 +127,10 @@ function listRow(ipo, { big, applied } = {}) {
     : big ? `${ds && ds.endsWith('상장') ? '' : `${listingLabel(ipo)} · `}시초가 매도`
     : (listed || !ipo.listing_date ? sub : `${sub} · ${listingLabel(ipo)}`);
   const title = `${applied ? '✓ ' : ''}${ipo.name}`;
+  const mine = !listed && !ipo.withdrawn ? myBrokerMatches(ipo, state.myBrokers).join(', ') : '';
   return h('button', { class: 'row', type: 'button', onclick: () => select(ipo.no) },
     h('span', {}, h('span', { class: `name${big ? ' big' : ''}` }, title),
-      h('span', { class: 'meta' }, ds && h('span', { class: 'today' }, ds), ds && ' · ', segs(rest))),
+      h('span', { class: 'meta' }, ds && h('span', { class: 'today' }, ds), ds && ' · ', segs(rest, mine))),
     h('span', { class: `badge ${tone(ipo)}` }, badgeText(ipo)));
 }
 
@@ -260,10 +261,11 @@ function brokerButton(link) {
 }
 
 // A text whose "·" pieces each stay on one line: the line may break only at a dot. Without a dot it is plain text.
-function segs(text) {
+function segs(text, mine) {
   const parts = splitSegments(text);
+  if (mine) parts.push(mine);
   if (parts.length < 2) return text;
-  return parts.flatMap((p, i) => [i ? ' · ' : '', h('span', { class: 'seg' }, p)]);
+  return parts.flatMap((p, i) => [i ? ' · ' : '', h('span', { class: mine && i === parts.length - 1 ? 'seg mine' : 'seg' }, p)]);
 }
 
 // A dotted-underline term: pressing it (or its whole row/cell, see the panel click handler) opens the one speech bubble.
@@ -335,9 +337,27 @@ function renderDetail() {
   if (!ipo) { box.replaceChildren(); return; }
 
   const listed = ipo.first_close != null;
-  const chips = [ipo.market, ...(ipo.underwriters || [])].filter(Boolean);
+  const brokers = (ipo.underwriters || []).filter(Boolean);
+  const chips = brokers.map((name, index) => {
+    if (!state.canApply) return h('span', { class: 'badge' }, name);
+    return h('button', {
+      type: 'button', class: 'badge broker-chip', 'aria-pressed': String(state.myBrokers.has(normalizeBroker(name))),
+      onclick: () => {
+        state.myBrokers = toggleMyBroker(state.myBrokers, name);
+        saveMyBrokers(localStore(), state.myBrokers);
+        renderList();
+        renderDetail();
+        box.querySelectorAll('.broker-chip')[index].focus({ preventScroll: true });
+      },
+    }, name);
+  });
+  if (ipo.market) chips.unshift(h('span', { class: 'badge' }, ipo.market));
   const nodes = [h('h1', { class: 'name' }, ipo.name),
-    h('div', { class: 'chips' }, chips.map(c => h('span', { class: 'badge' }, c)))];
+    h('div', { class: 'chips' }, chips)];
+  if (state.canApply && state.hintNo === ipo.no && !listed && !ipo.withdrawn && brokers.length) {
+    const hint = state.myBrokers.size ? '목록에 파란 글자로 표시돼요' : '계좌 있는 증권사를 눌러 두면 목록에 표시돼요';
+    nodes.push(h('p', { class: 'broker-hint' }, hint));
+  }
   // conclusion -> action -> numbers -> evidence
   nodes.push(...(listed ? factNodes(resultGrid(ipo), 'result') : verdictNodes(ipo)));
   nodes.push(...appliedNodes(ipo), ...alarmNodes(ipo), ...brokerNodes(ipo));
@@ -569,6 +589,7 @@ function route() {
   const wasOpen = state.view && state.view !== 'list';
   state.view = r.view;
   state.selected = r.view === 'detail' ? r.no : null;
+  state.hintNo = r.view === 'detail' && !state.myBrokers.size ? r.no : null;
   $('detail').hidden = r.view !== 'detail';
   $('record').hidden = r.view !== 'record';
   const ipo = state.ipos.find(i => i.no === r.no);
@@ -611,6 +632,7 @@ async function init() {
   });
   state.canApply = appliedAvailable(localStore());
   state.applied = state.canApply ? readApplied(localStore()) : new Set();
+  state.myBrokers = state.canApply ? readMyBrokers(localStore()) : new Set();
   $('back').addEventListener('click', goBack);
   // The bubble closes on a press outside the terms, Esc, and scrolling of the detail layer (it is #v-sub that scrolls, not the window).
   document.addEventListener('click', ev => { if (!ev.target.closest('#detail .panel')) closeTip(); });

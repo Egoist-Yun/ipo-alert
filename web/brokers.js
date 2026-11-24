@@ -29,6 +29,35 @@ export function normalizeBroker(name) {
   return n;
 }
 
+const MY_BROKERS_KEY = 'ipo-my-brokers';
+
+export function readMyBrokers(storage) {
+  try {
+    const list = JSON.parse(storage.getItem(MY_BROKERS_KEY));
+    if (!Array.isArray(list)) return new Set();
+    return new Set(list.filter(name => typeof name === 'string').map(normalizeBroker).filter(Boolean));
+  } catch (e) {
+    return new Set();
+  }
+}
+
+export function saveMyBrokers(storage, set) {
+  try { storage.setItem(MY_BROKERS_KEY, JSON.stringify([...set].sort())); } catch (e) { /* storage blocked */ }
+}
+
+export function toggleMyBroker(set, name) {
+  const next = new Set(set);
+  const broker = normalizeBroker(name);
+  if (broker && !next.delete(broker)) next.add(broker);
+  return next;
+}
+
+export function myBrokerMatches(ipo, mine) {
+  if (!mine.size) return [];
+  const names = (ipo.underwriters || []).map(normalizeBroker);
+  return [...new Set(names.filter(name => name && mine.has(name)))];
+}
+
 export function brokerLinks(underwriters) {
   const seen = new Set();
   const out = [];

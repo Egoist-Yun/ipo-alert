@@ -90,6 +90,7 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .row .name { display: block; color: var(--foreground); font-size: 1rem; font-weight: 600; }
 .row .name.big { font-size: 1.0625rem; }
 .row .meta { display: block; color: var(--muted); font-size: 0.8125rem; line-height: 1.5; }
+.row .mine { color: var(--weak-fg); font-weight: 600; }
 .badge { flex: none; padding: 0 var(--space-md); border-radius: 6px; background: var(--weak-bg); color: var(--weak-fg); font-size: 0.75rem; font-weight: 600; line-height: 24px; }
 .badge.risk { background: var(--danger-weak); color: var(--danger); }
 .badge.wait, .badge.done { background: var(--surface); color: var(--body); }
@@ -123,8 +124,12 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .record:empty { display: none; }
 .panel { padding: var(--space-xl) 0 0; border-top: 1px solid var(--border); }
 .panel .name { color: var(--foreground); font-size: 1.25rem; font-weight: 700; line-height: 1.5; text-wrap: balance; }
-.chips { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin: var(--space-md) 0 0; }
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); margin: var(--space-md) 0 0; }
 .chips .badge { background: var(--surface); color: var(--body); }
+.chips .broker-chip { position: relative; }
+.chips .broker-chip::after { content: ''; position: absolute; inset: -10px -4px; }
+.chips .broker-chip[aria-pressed="true"] { background-color: var(--weak-bg); color: var(--weak-fg); }
+.broker-hint { margin-top: var(--space-xs); color: var(--muted); font-size: 0.8125rem; }
 /* verdict header: a red box for a warning, a grey box for no warning but 2+ risk signals, otherwise a plain line */
 .verdict { margin-top: var(--space-lg); }
 .verdict h2 { color: var(--foreground); font-size: 1.25rem; font-weight: 700; line-height: 1.4; }
