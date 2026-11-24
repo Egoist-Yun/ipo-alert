@@ -283,7 +283,7 @@ function kv(k, v, cls, tip) {
 function closeTip() {
   const box = $('detail');
   const tip = box.querySelector('.tip');
-  if (tip) tip.hidden = true;
+  if (tip) tip.classList.remove('open');
   for (const b of box.querySelectorAll('.term[aria-expanded="true"]')) b.setAttribute('aria-expanded', 'false');
 }
 
@@ -310,8 +310,6 @@ function toggleTip(holder) {
   closeTip();
   if (wasOpen) return;
   tip.textContent = GLOSSARY[btn.dataset.tip];
-  tip.style.visibility = 'hidden';
-  tip.hidden = false;
   const p = panel.getBoundingClientRect();
   const { top: textTop, bottom: textBottom } = textExtent(holder);
   const view = $('v-sub').getBoundingClientRect();
@@ -322,12 +320,15 @@ function toggleTip(holder) {
   const bar = $('v-sub').querySelector('.topbar');
   const roomAbove = textTop - (bar ? bar.getBoundingClientRect().bottom : view.top);
   const below = roomBelow >= need || (roomAbove < need && roomBelow >= roomAbove);
-  tip.className = `tip ${below ? 'below' : 'above'}`;
+  tip.className = `tip ${below ? 'below' : 'above'} reset`;
   tip.style.top = `${below ? textBottom - p.top + 4 + 7 : textTop - p.top - 4 - 7 - tip.offsetHeight}px`;
   const t = btn.getBoundingClientRect();
   const arrow = Math.min(Math.max(t.left + t.width / 2 - p.left - 5, 12), p.width - 22);
   tip.style.setProperty('--arrow', `${arrow}px`);
-  tip.style.visibility = '';
+  // Apply the closed styles immediately so switching terms starts a fresh entrance.
+  void tip.offsetHeight;
+  tip.classList.remove('reset');
+  tip.classList.add('open');
   btn.setAttribute('aria-expanded', 'true');
 }
 
@@ -372,7 +373,7 @@ function renderDetail() {
     if (!listed) nodes.push(...modelNodes(ipo));
   }
   if (ipo.url) nodes.push(h('a', { class: 'btn-medium', href: ipo.url, target: '_blank', rel: 'noopener' }, '원문 보기'));
-  nodes.push(h('p', { class: 'tip', id: 'tip', role: 'status', hidden: true }));
+  nodes.push(h('p', { class: 'tip', id: 'tip', role: 'status' }));
   box.replaceChildren(h('div', { class: 'panel', onclick: ev => {
     const holder = ev.target.closest('.has-tip');
     if (holder) toggleTip(holder); else closeTip();

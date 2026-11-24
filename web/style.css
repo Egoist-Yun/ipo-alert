@@ -167,11 +167,18 @@ button:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 1px var
 .term:active { transform: none; opacity: 0.6; }
 .has-tip, .kv.has-tip, .fact.has-tip { cursor: pointer; }
 .panel { position: relative; }
-.tip { position: absolute; left: 0; right: 0; z-index: 5; margin: 0; padding: 10px 12px; border-radius: 10px;
+.tip { position: absolute; top: 0; left: 0; right: 0; z-index: 5; margin: 0; padding: 10px 12px; border-radius: 10px;
   background: var(--foreground); color: var(--canvas); font-size: 0.875rem; font-weight: 400; line-height: 1.5;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-  word-break: keep-all; overflow-wrap: break-word; text-wrap: pretty; }
-.tip[hidden] { display: none; }
+  word-break: keep-all; overflow-wrap: break-word; text-wrap: pretty;
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity 120ms ease-in, transform 120ms ease-in, visibility 0s linear 120ms; }
+.tip.below { transform: translateY(-4px); }
+.tip.above { transform: translateY(4px); }
+.tip.open { opacity: 1; visibility: visible; pointer-events: auto; transform: none;
+  transition: opacity 150ms ease-out, transform 150ms ease-out, visibility 0s; }
+.tip.reset { transition: none; }
+@media (prefers-reduced-motion: reduce) { .tip, .tip.below, .tip.above, .tip.open { transition: none; transform: none; } }
 .tip::before { content: ''; position: absolute; left: var(--arrow, 24px); width: 10px; height: 10px; background: inherit; border-radius: 2px; transform: rotate(45deg); }
 .tip.below::before { top: -5px; }
 .tip.above::before { bottom: -5px; }
