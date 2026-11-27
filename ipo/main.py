@@ -183,7 +183,8 @@ def _warning_pre(pred: dict | None, matched: list[dict]) -> str | None:
     return warning_level({"prob": prob}, matched) if prob else None
 
 
-def _update_ledger(data_dir: Path, ipos: list, now_kst: datetime, errors: list | None = None) -> dict | None:
+def _update_ledger(data_dir: Path, ipos: list[Ipo], history: list[Ipo], now_kst: datetime,
+                   errors: list | None = None) -> dict | None:
     """Save new predictions, fill results, refresh the score. A failure here must never break the calendar:
     it is logged, appended to `errors` (reported in the payload and by an alert) and the run goes on."""
     try:
@@ -192,7 +193,9 @@ def _update_ledger(data_dir: Path, ipos: list, now_kst: datetime, errors: list |
         record_predictions(ledger, ipos, now_kst, model_id(data_dir / "model.json"))
         fill_results(ledger, ipos, now_kst)
         save_ledger(path, ledger)
-        summary = summarize(ledger)
+        # Current schedules take precedence over the historical fallback for legacy records.
+        subscription_starts = {str(i.no): i.sub_start for i in (*history, *ipos) if i.sub_start}
+        summary = summarize(ledger, subscription_starts)
         update_backtest_md(data_dir / "backtest.md", ledger_markdown(summary))
         return summary
     except Exception as e:
@@ -302,7 +305,7 @@ def run(data_dir: Path, target: Target | None, site_url: str, now_kst: datetime,
         history = load_history(history_path) if history_path.exists() else []   # saved by _build just above
         ipos = sorted(ipos + _carry_withdrawn(previous, ipos, history, now_kst, fetch, raw_failures), key=lambda i: (i.sub_start or "", i.no))
         failures = list({(f["no"], f["name"]): f for f in raw_failures}.values())  # a stock can fail in both the history and the current pass
-        payload = {"updated_at": now_kst.isoformat(), "ledger": _update_ledger(data_dir, ipos, now_kst, ledger_errors), "ipos": [asdict(i) for i in ipos]}
+        payload = {"updated_at": now_kst.isoformat(), "ledger": _update_ledger(data_dir, ipos, history, now_kst, ledger_errors), "ipos": [asdict(i) for i in ipos]}
         if failures:
             payload["detail_failures"] = failures
         if ledger_errors:

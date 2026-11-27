@@ -3,7 +3,7 @@ An entry is written once and never changed; only the `result` field is filled af
 import hashlib
 import json
 import os
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from ipo import config
@@ -47,6 +47,24 @@ def _stamp(now: datetime, model: str) -> dict:
     return {"saved_at": now.isoformat(timespec="seconds"), "model": model}
 
 
+def _before_subscription(saved_at: datetime, sub_start: str | None) -> bool:
+    # The source supplies a date without an opening time. Use midnight KST as the cutoff.
+    if not isinstance(sub_start, str) or saved_at.utcoffset() is None:
+        return False
+    try:
+        return saved_at.astimezone(config.KST).date() < date.fromisoformat(sub_start)
+    except ValueError:
+        return False
+
+
+def _eligible_pre(record: dict, legacy_sub_start: str | None) -> bool:
+    try:
+        saved_at = datetime.fromisoformat(record.get("saved_at"))
+    except (TypeError, ValueError):
+        return False
+    return _before_subscription(saved_at, record.get("sub_start", legacy_sub_start))
+
+
 def record_predictions(ledger: dict, ipos: list[Ipo], now: datetime, model: str) -> int:
     """Add the first pre-subscription and the first post-subscription prediction of each upcoming stock."""
     if now.date().isoformat() < config.LEDGER_START:
@@ -58,12 +76,12 @@ def record_predictions(ledger: dict, ipos: list[Ipo], now: datetime, model: str)
             continue
         entry = ledger.get(str(ipo.no))
         prob = pred.get("prob")
-        if prob and not (entry and "pre" in entry):
+        if prob and not (entry and "pre" in entry) and _before_subscription(now, ipo.sub_start):
             knn = pred.get("knn")
             rec = {"p_down": prob["p_down"], "warn": bool(prob.get("warn")),
                    "level": warning_level({"prob": prob}, ipo.patterns), "threshold": prob.get("threshold"),
                    "knn": {"n": knn["n"], "down_count": knn["down_count"], "median": knn["median"]} if knn else None,
-                   **_stamp(now, model)}
+                   "sub_start": ipo.sub_start, **_stamp(now, model)}
             entry = ledger.setdefault(str(ipo.no), {"no": ipo.no, "name": ipo.name, "listing_date": ipo.listing_date,
                                                      "offer_price": ipo.final_price, "result": None})
             entry["pre"] = rec
@@ -103,10 +121,13 @@ def fill_results(ledger: dict, ipos: list[Ipo], now: datetime) -> int:
     return filled
 
 
-def summarize(ledger: dict) -> dict:
+def summarize(ledger: dict, subscription_starts: dict[str, str] | None = None) -> dict:
+    """Score pre records only when their save time is provably before subscription day."""
+    subscription_starts = subscription_starts or {}
     out = {"since": config.LEDGER_START}
     for key, target in (("pre", "close_down"), ("post", "open_down")):
-        saved = [e for e in ledger.values() if key in e and not e.get("withdrawn")]
+        saved = [e for no, e in ledger.items() if key in e and not e.get("withdrawn")
+                 and (key != "pre" or _eligible_pre(e[key], subscription_starts.get(no)))]
         done = [e for e in saved if (e.get("result") or {}).get(target) is not None]
         warned = [e for e in done if e[key].get("warn")]
         strong = [e for e in warned if e[key].get("level") == "strong"]

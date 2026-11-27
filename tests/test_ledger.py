@@ -18,7 +18,7 @@ def at(day, hour=10):
 
 def stock(no=1, **kw):
     base = dict(no=no, name=f"S{no}", url="", final_price=10000, listing_date="2026-11-30", prediction=PRE,
-                patterns=RISK_PRE)
+                sub_start="2026-11-23", patterns=RISK_PRE)
     base.update(kw)
     return Ipo(**base)
 
@@ -46,9 +46,18 @@ def test_post_prediction_is_saved_separately_after_the_subscription_closes():
     assert record_predictions(led, [closed], at(26), "m1") == 0
 
 
+def test_pre_prediction_requires_a_known_future_subscription_date():
+    led = {}
+    no_date = stock(no=2, sub_start=None)
+    assert record_predictions(led, [stock(), no_date], at(23, 0), "m") == 0
+    assert led == {}
+    assert record_predictions(led, [stock(), no_date], at(22, 23), "m") == 1
+    assert led["1"]["pre"]["sub_start"] == "2026-11-23"
+
+
 def test_nothing_is_saved_from_listing_day_9am_on():
     led = {}
-    listing = stock(listing_date="2026-11-30")
+    listing = stock(listing_date="2026-11-30", prediction=POST, retail_competition=900.0)
     assert record_predictions(led, [listing], datetime(2026, 11, 30, 9, 0, tzinfo=KST), "m") == 0
     assert record_predictions(led, [listing], datetime(2026, 11, 30, 18, 0, tzinfo=KST), "m") == 0
     assert led == {}
@@ -80,7 +89,8 @@ def test_results_are_filled_without_touching_predictions():
 
 
 def entry(level, down_open, down_close, with_post=True):
-    e = {"pre": {"warn": level is not None, "level": level},
+    e = {"pre": {"warn": level is not None, "level": level, "saved_at": at(18).isoformat(),
+                 "sub_start": "2026-11-23"},
          "result": {"open_down": down_open, "close_down": down_close}}
     if with_post:
         e["post"] = {"warn": level is not None, "level": level}
@@ -89,7 +99,7 @@ def entry(level, down_open, down_close, with_post=True):
 
 def test_summary_counts_warnings_and_declines_per_model():
     led = {"1": entry("strong", True, True), "2": entry("warn", False, True), "3": entry(None, False, True),
-           "4": entry(None, False, False), "5": {"pre": {"warn": True, "level": "warn"}, "result": None}}
+           "4": entry(None, False, False), "5": {**entry("warn", True, True, with_post=False), "result": None}}
     s = summarize(led)
     pre = s["pre"]
     assert (pre["saved"], pre["resolved"], pre["pending"]) == (5, 4, 1)
@@ -98,6 +108,21 @@ def test_summary_counts_warnings_and_declines_per_model():
     post = s["post"]
     assert (post["warned"], post["caught"], post["n_down"]) == (2, 1, 1)
     assert pre["early"] is True  # fewer than 10 declines
+
+
+def test_summary_excludes_late_or_unprovable_legacy_pre_records_without_changing_them():
+    led = {str(i): entry("warn", True, True) for i in range(1, 6)}
+    for e in led.values():
+        del e["pre"]["sub_start"]
+    led["1"]["pre"]["saved_at"] = "2026-11-22T14:59:59+00:00"  # just before midnight KST
+    led["2"]["pre"]["saved_at"] = "2026-11-22T15:00:00+00:00"  # midnight KST
+    led["3"]["pre"]["saved_at"] = "2026-11-22T10:00:00"  # timezone unknown
+    led["4"]["pre"]["saved_at"] = "invalid"
+    before = json.dumps(led)
+    summary = summarize(led, {str(i): "2026-11-23" for i in range(1, 5)})
+    assert summary["pre"]["saved"] == summary["pre"]["caught"] == 1
+    assert summary["post"]["saved"] == 5
+    assert json.dumps(led) == before
 
 
 def test_summary_is_not_early_with_ten_declines():
